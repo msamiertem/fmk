@@ -67,11 +67,31 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // CONFIG & INIT
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'fmk-iho-sinav-v2';
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
+        let firebaseConfig;
+        try {
+            firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+                apiKey: "AIzaSyCEDQx24MxmojexLe1446bWuCc4BQY9MAY",
+                authDomain: "fmkiho.firebaseapp.com",
+                projectId: "fmkiho",
+                storageBucket: "fmkiho.firebasestorage.app",
+                messagingSenderId: "71872908192",
+                appId: "1:71872908192:web:d3f25f0af1b367d29e72c5",
+                measurementId: "G-NCSR8MJ5LC"
+            };
+        } catch (e) {
+            console.error("Firebase config parse hatası", e);
+        }
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'fmkiho';
+        
+        let app, db, auth;
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (e) {
+            console.error("Firebase başlatılamadı. Lütfen config bilgilerini kontrol edin.", e);
+        }
 
         // STATE
         let state = {
@@ -97,30 +117,18 @@
             { id: 'il', label: 'Adres İli', group: 'iletisim' },
             { id: 'ilce', label: 'Adres İlçesi', group: 'iletisim' },
             { id: 'basarilar', label: 'Başarı ve Yetenekler', group: 'ogrenci', type: 'textarea' },
-            { id: 'bolum1', label: 'Bölüm Tercihi 1 (Hafızlık/Arapça)', group: 'tercih', type: 'select', options: ['Hafızlık', 'Arapça'] },
-            { id: 'bolum2', label: 'Bölüm Tercihi 2 (Hafızlık/Arapça/Farketmez)', group: 'tercih', type: 'select', options: ['Hafızlık', 'Arapça', 'Farketmez'] },
-            { id: 'bolum3', label: 'Bölüm Tercihi 3 (Hafızlık/İngilizce/Farketmez)', group: 'tercih', type: 'select', options: ['Hafızlık', 'İngilizce', 'Farketmez'] },
-            { id: 'bolum4', label: 'Bölüm Tercihi 4 (Hafızlık/İngilizce)', group: 'tercih', type: 'select', options: ['Hafızlık', 'İngilizce'] },
-            { id: 'bolum5', label: 'Bölüm Tercihi 5 (Arapça/İngilizce)', group: 'tercih', type: 'select', options: ['Arapça', 'İngilizce'] },
-            { id: 'bolum6', label: 'Bölüm Tercihi 6 (Arapça/Hafızlık/İngilizce)', group: 'tercih', type: 'select', options: ['Arapça', 'Hafızlık', 'İngilizce'] },
+            { id: 'bolum1', label: 'Bölüm Tercihi 1', group: 'tercih', type: 'select', options: ['Hafızlık', 'Arapça', 'İngilizce'] },
             { id: 'babaAd', label: 'Baba Adı Soyadı', group: 'veli' },
             { id: 'babaCep', label: 'Baba Cep Telefonu', group: 'veli', placeholder: '5XX XX XX' },
             { id: 'babaMeslek', label: 'Baba Mesleği', group: 'veli' },
             { id: 'babaEgitim', label: 'Baba Eğitim Durumu', group: 'veli', type: 'select', options: ['İlkokul', 'Ortaokul', 'Lise', 'MYO', 'Üniversite', 'Yüksek Lisans', 'Doktora'] },
-            { id: 'babaNufus', label: 'Babanın Nüfusa Bağlı Şehir', group: 'veli' },
-            { id: 'babaIs', label: 'Babanın Çalıştığı Yer', group: 'veli' },
             { id: 'anneAd', label: 'Anne Adı Soyadı', group: 'veli' },
             { id: 'anneCep', label: 'Anne Cep Telefonu', group: 'veli', placeholder: '5XX XX XX' },
-            { id: 'anneMeslek', label: 'Anne Mesleği', group: 'veli' },
-            { id: 'anneEgitim', label: 'Anne Eğitim Durumu', group: 'veli', type: 'select', options: ['İlkokul', 'Ortaokul', 'Lise', 'MYO', 'Üniversite', 'Yüksek Lisans', 'Doktora'] },
-            { id: 'anneNufus', label: 'Annenin Nüfusa Bağlı Şehir', group: 'veli' },
             { id: 'veliKim', label: 'Öğrenci Velisi Kimdir?', group: 'veli', type: 'select', options: ['Anne', 'Baba', 'Diğer'] },
             { id: 'kuranSeviye', label: 'Kuran Bilgi Düzeyi', group: 'ogrenci', type: 'select', options: ['Hiç Bilmiyor', 'Başlangıç', 'Orta', 'İleri', 'Hafızlık Yapıyor'] },
             { id: 'ingSeviye', label: 'İngilizce Bilgi Düzeyi', group: 'ogrenci', type: 'select', options: ['Çok Zayıf', 'Normal', 'İleri', 'Üst Seviye'] },
             { id: 'referans', label: 'Bizi Nereden Duydunuz?', group: 'diger', type: 'select', options: ['Yakın Tavsiyesi', 'Biliyordum', 'Okulda Çocuğum Var', 'Sosyal Medya'] },
             { id: 'not', label: 'Okula Notunuz', group: 'diger', type: 'textarea' },
-            { id: 'digerProje', label: 'Başka Proje Okulu Başvurusu?', group: 'diger' },
-            { id: 'ingYedek', label: 'İngilizce Olmazsa?', group: 'tercih', type: 'select', options: ['Hafızlık Olur', 'Kayıt Yaptırmam'] },
             { id: 'oncelikTercih', label: 'Öncelikli Bölüm Tercihiniz?', group: 'tercih', type: 'select', options: ['Öncelik Hafızlık', 'Öncelik İngilizce'] },
             { id: 'tercihSebebi', label: 'Okulu Tercih Sebebi?', group: 'diger', type: 'select', options: ['Akademik', 'Hafızlık', 'Tavsiye', 'Diğer'] }
         ];
@@ -174,9 +182,6 @@
         const views = {
             header: () => `
                 <div class="bg-emerald-700 text-white p-8 rounded-b-[40px] shadow-lg mb-8 text-center relative overflow-hidden no-print">
-                    <div class="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-                        <svg width="100%" height="100%"><pattern id="pattern" width="40" height="40" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="white"/></pattern><rect width="100%" height="100%" fill="url(#pattern)"/></svg>
-                    </div>
                     <div class="relative z-10 flex flex-col items-center">
                         <div class="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mb-4 shadow-xl rotate-3">
                             <i data-lucide="graduation-cap" class="text-emerald-700 w-12 h-12"></i>
@@ -196,7 +201,7 @@
                             <i data-lucide="clipboard-list" class="w-8 h-8"></i>
                         </div>
                         <h3 class="text-xl font-black mb-2 text-slate-800">Veli Girişi</h3>
-                        <p class="text-slate-500 text-sm leading-relaxed">Yeni sınav başvurusu yapmak veya mevcut başvurunuzun durumunu sorgulamak için burayı kullanın.</p>
+                        <p class="text-slate-500 text-sm leading-relaxed">Yeni sınav başvurusu yapmak veya durum sorgulamak için burayı kullanın.</p>
                         <div class="mt-6 flex items-center text-blue-600 font-bold text-sm gap-2">
                             Giriş Yap <i data-lucide="arrow-right" class="w-4 h-4"></i>
                         </div>
@@ -206,19 +211,10 @@
                             <i data-lucide="shield-check" class="w-8 h-8"></i>
                         </div>
                         <h3 class="text-xl font-black mb-2 text-slate-800">Yönetim Paneli</h3>
-                        <p class="text-slate-500 text-sm leading-relaxed">Başvuruları onaylama, salon atama ve form alanlarını özelleştirme işlemleri için yetkili girişi.</p>
+                        <p class="text-slate-500 text-sm leading-relaxed">Başvuruları onaylama ve salon atama işlemleri için yetkili girişi.</p>
                         <div class="mt-6 flex items-center text-purple-600 font-bold text-sm gap-2">
                             Sistemi Yönet <i data-lucide="arrow-right" class="w-4 h-4"></i>
                         </div>
-                    </div>
-                </div>
-                <div class="mt-12 bg-emerald-50 rounded-[32px] p-8 flex items-start gap-5 border border-emerald-100">
-                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm shrink-0">
-                        <i data-lucide="info" class="text-emerald-600"></i>
-                    </div>
-                    <div>
-                        <h4 class="font-bold text-emerald-900 mb-1">Bilgilendirme</h4>
-                        <p class="text-emerald-800/80 text-sm leading-relaxed">Başvuru işlemi için öğrencinin T.C. Kimlik Numarası gereklidir. Başvuru sonunda alacağınız giriş belgesi ile sınava katılım sağlayabilirsiniz.</p>
                     </div>
                 </div>
             `,
@@ -231,10 +227,8 @@
                         <p class="text-slate-400 text-sm">T.C. Kimlik numaranızı yazarak devam edin.</p>
                     </div>
                     <div class="space-y-6">
-                        <div class="relative">
-                            <input type="text" id="login-tc" maxlength="11" placeholder="00000000000" class="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 text-center text-2xl font-mono tracking-[0.3em] focus:border-emerald-500 focus:bg-white transition-all outline-none">
-                        </div>
-                        <button onclick="actions.parentLogin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-2xl shadow-lg shadow-emerald-200 transition-all active:scale-[0.98] flex items-center justify-center gap-3">
+                        <input type="text" id="login-tc" maxlength="11" placeholder="00000000000" class="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 text-center text-2xl font-mono tracking-[0.3em] focus:border-emerald-500 focus:bg-white transition-all outline-none">
+                        <button onclick="actions.parentLogin()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-2xl shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-3">
                             <i data-lucide="log-in" class="w-5 h-5"></i> DEVAM ET
                         </button>
                     </div>
@@ -266,34 +260,16 @@
                                         const config = state.settings.fields[f.id];
                                         const req = config.required ? 'required' : '';
                                         const reqStar = config.required ? '<span class="text-red-500 ml-1">*</span>' : '';
-                                        
-                                        let input = `<input type="text" name="${f.id}" ${req} placeholder="${f.placeholder || ''}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition-all">`;
-                                        
-                                        if (f.type === 'textarea') {
-                                            input = `<textarea name="${f.id}" ${req} class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition-all h-24"></textarea>`;
-                                        } else if (f.type === 'select') {
-                                            input = `<select name="${f.id}" ${req} class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition-all">
-                                                <option value="">Seçiniz</option>
-                                                ${f.options.map(o => `<option value="${o}">${o}</option>`).join('')}
-                                            </select>`;
-                                        }
-
-                                        return `
-                                            <div class="${f.type === 'textarea' ? 'md:col-span-2' : ''}">
-                                                <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase">${f.label} ${reqStar}</label>
-                                                ${input}
-                                            </div>
-                                        `;
+                                        let input = `<input type="text" name="${f.id}" ${req} placeholder="${f.placeholder || ''}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 transition-all">`;
+                                        if (f.type === 'textarea') input = `<textarea name="${f.id}" ${req} class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 transition-all h-24"></textarea>`;
+                                        if (f.type === 'select') input = `<select name="${f.id}" ${req} class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:border-emerald-500 transition-all"><option value="">Seçiniz</option>${f.options.map(o => `<option value="${o}">${o}</option>`).join('')}</select>`;
+                                        return `<div><label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase">${f.label} ${reqStar}</label>${input}</div>`;
                                     }).join('')}
                                 </div>
                             </div>
                         `;
                     }).join('')}
-                    <div class="pt-4">
-                        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-5 rounded-[24px] shadow-2xl shadow-emerald-200 transition-all flex items-center justify-center gap-3 text-lg">
-                            <i data-lucide="check-circle" class="w-6 h-6"></i> BAŞVURUYU TAMAMLA VE KAYDET
-                        </button>
-                    </div>
+                    <button type="submit" class="w-full bg-emerald-600 text-white font-black py-5 rounded-[24px] shadow-2xl transition-all">KAYDET VE TAMAMLA</button>
                 </form>
                 `;
             },
@@ -303,59 +279,19 @@
                 const room = state.rooms.find(r => r.id === app.room);
                 return `
                 ${views.header()}
-                <div class="bg-white rounded-[40px] shadow-2xl border border-slate-100 overflow-hidden no-print">
-                    <div class="p-10 text-center">
-                        <div class="w-24 h-24 mx-auto mb-6 rounded-3xl flex items-center justify-center ${app.status === 'approved' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}">
-                            <i data-lucide="${app.status === 'approved' ? 'check-circle' : 'clock-3'}" class="w-12 h-12"></i>
-                        </div>
-                        <h3 class="text-3xl font-black text-slate-800">${app.ad} ${app.soyad}</h3>
-                        <p class="text-slate-400 font-medium">T.C. No: ${app.tc}</p>
-                        
-                        <div class="mt-8 inline-block px-6 py-2 rounded-full font-black text-xs uppercase tracking-widest ${app.status === 'approved' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'} shadow-lg">
-                            BAŞVURU DURUMU: ${app.status === 'approved' ? 'ONAYLANDI' : 'İNCELENİYOR'}
-                        </div>
-
-                        ${app.status === 'approved' ? `
-                            <div class="mt-12 bg-slate-50 border-2 border-dashed border-slate-200 p-8 rounded-[32px]">
-                                <p class="text-slate-600 text-sm mb-6 font-medium">Başvurunuz onaylanmıştır. Sınav giriş belgenizi aşağıdan yazdırabilirsiniz.</p>
-                                <button onclick="window.print()" class="bg-slate-800 text-white font-black px-10 py-4 rounded-2xl flex items-center justify-center gap-3 mx-auto hover:bg-black transition-all shadow-xl">
-                                    <i data-lucide="printer"></i> GİRİŞ BELGESİNİ YAZDIR
-                                </button>
-                            </div>
-                        ` : `
-                            <div class="mt-12 bg-blue-50 border border-blue-100 p-8 rounded-[32px]">
-                                <p class="text-blue-800 text-sm leading-relaxed">Başvurunuz başarıyla alınmıştır. Okul yönetimi onayladığında buradan giriş belgenize erişebileceksiniz. Lütfen belirli aralıklarla kontrol ediniz.</p>
-                            </div>
-                        `}
+                <div class="bg-white rounded-[40px] shadow-2xl border p-10 text-center no-print">
+                    <h3 class="text-3xl font-black text-slate-800 mb-4">${app.ad} ${app.soyad}</h3>
+                    <div class="inline-block px-6 py-2 rounded-full font-black text-xs uppercase ${app.status === 'approved' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'}">
+                        DURUM: ${app.status === 'approved' ? 'ONAYLANDI' : 'İNCELENİYOR'}
                     </div>
+                    ${app.status === 'approved' ? `<button onclick="window.print()" class="block mt-12 bg-slate-800 text-white font-black px-10 py-4 rounded-2xl mx-auto">BELGEYİ YAZDIR</button>` : `<p class="mt-8 text-slate-500">Başvurunuz onaylandığında giriş belgeniz burada görünecektir.</p>`}
                 </div>
-
-                <!-- Print Section -->
-                <div class="print-only">
-                    <div style="border: 4px double #000; padding: 40px; font-family: sans-serif;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px;">
-                            <div>
-                                <h1 style="margin: 0; font-size: 24px;">${state.settings.schoolName}</h1>
-                                <h2 style="margin: 5px 0 0; font-size: 18px;">ÖĞRENCİ KABUL SINAVI GİRİŞ BELGESİ</h2>
-                            </div>
-                            <div style="width: 100px; height: 120px; border: 1px solid #000; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #666;">FOTOĞRAF ALANI</div>
-                        </div>
-                        <div style="display: grid; grid-template-cols: 1fr 1fr; gap: 20px; font-size: 16px;">
-                            <p><strong>TC Kimlik No:</strong> ${app.tc}</p>
-                            <p><strong>Ad Soyad:</strong> ${app.ad} ${app.soyad}</p>
-                            <p><strong>Cinsiyet:</strong> ${app.cinsiyet || '-'}</p>
-                            <p><strong>Doğum Tarihi:</strong> ${app.dogumTarihi || '-'}</p>
-                        </div>
-                        <div style="margin-top: 40px; background: #eee; padding: 20px; border-radius: 10px;">
-                            <h3 style="margin-top: 0;">Sınav Bilgileri</h3>
-                            <p><strong>Sınav Salonu:</strong> ${room ? room.name : 'Okulda İlan Edilecektir'}</p>
-                            <p><strong>Sıra No:</strong> Sınıf listesinden kontrol ediniz.</p>
-                        </div>
-                        <div style="margin-top: 40px; font-size: 12px; color: #444; font-style: italic;">
-                            * Sınav günü kimlik belgenizle birlikte sınav saatinden 20 dk önce okulda hazır bulununuz.<br>
-                            * Yanınızda kurşun kalem ve silgi bulundurmayı unutmayınız.
-                        </div>
-                    </div>
+                <div class="print-only p-10 border-4 border-black font-sans">
+                    <h1>${state.settings?.schoolName}</h1>
+                    <h2>SINAV GİRİŞ BELGESİ</h2>
+                    <p><strong>TC:</strong> ${app.tc}</p>
+                    <p><strong>Ad Soyad:</strong> ${app.ad} ${app.soyad}</p>
+                    <p><strong>Salon:</strong> ${room ? room.name : 'Okulda İlan Edilecektir'}</p>
                 </div>
                 `;
             },
@@ -363,335 +299,167 @@
             adminLogin: () => `
                 <div class="max-w-md mx-auto pt-12">
                     <div class="bg-white p-10 rounded-[40px] shadow-2xl border border-slate-100">
-                        <div class="text-center mb-10">
-                            <div class="w-16 h-16 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                <i data-lucide="lock" class="w-8 h-8"></i>
-                            </div>
-                            <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tighter">Admin Girişi</h3>
-                        </div>
-                        <div class="space-y-6">
-                            <input type="password" id="admin-pass" placeholder="Yönetici Şifresi" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-center focus:border-purple-500 outline-none transition-all">
-                            <button onclick="actions.adminLogin()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-purple-200">GİRİŞ YAP</button>
-                        </div>
+                        <h3 class="text-2xl font-black text-center mb-10">ADMİN GİRİŞİ</h3>
+                        <input type="password" id="admin-pass" placeholder="Şifre (admin123)" class="w-full bg-slate-50 border rounded-2xl px-6 py-4 mb-6 text-center outline-none">
+                        <button onclick="actions.adminLogin()" class="w-full bg-purple-600 text-white font-black py-4 rounded-2xl">GİRİŞ</button>
                     </div>
                 </div>
             `,
 
             adminDashboard: () => `
-                <div class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <h2 class="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3">
-                        <i data-lucide="layout-dashboard" class="text-purple-600"></i> Yönetim Paneli
-                    </h2>
-                    <div class="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
-                        <button onclick="router.navigate('admin-dashboard')" class="px-4 py-2 rounded-xl text-xs font-black uppercase bg-purple-600 text-white">Adaylar</button>
-                        <button onclick="router.navigate('admin-fields')" class="px-4 py-2 rounded-xl text-xs font-black uppercase text-slate-500 hover:bg-slate-50">Form Ayarları</button>
-                        <button onclick="router.navigate('admin-rooms')" class="px-4 py-2 rounded-xl text-xs font-black uppercase text-slate-500 hover:bg-slate-50">Salonlar</button>
+                <div class="mb-8 flex justify-between items-center">
+                    <h2 class="text-2xl font-black">ADAY LİSTESİ</h2>
+                    <div class="flex gap-2 bg-white p-1 rounded-2xl border">
+                        <button onclick="router.navigate('admin-dashboard')" class="px-4 py-2 rounded-xl text-xs font-black bg-purple-600 text-white">Adaylar</button>
+                        <button onclick="router.navigate('admin-fields')" class="px-4 py-2 rounded-xl text-xs font-black text-slate-500">Ayarlar</button>
+                        <button onclick="router.navigate('admin-rooms')" class="px-4 py-2 rounded-xl text-xs font-black text-slate-500">Salonlar</button>
                     </div>
                 </div>
-
-                <div class="grid grid-cols-3 gap-4 mb-8">
-                    <div class="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm">
-                        <p class="text-[10px] font-black uppercase text-slate-400 mb-1">Toplam Başvuru</p>
-                        <p class="text-3xl font-black text-slate-800">${state.applicants.length}</p>
-                    </div>
-                    <div class="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm">
-                        <p class="text-[10px] font-black uppercase text-amber-500 mb-1">Bekleyen</p>
-                        <p class="text-3xl font-black text-amber-600">${state.applicants.filter(a => a.status === 'pending').length}</p>
-                    </div>
-                    <div class="bg-white p-6 rounded-[24px] border border-slate-100 shadow-sm">
-                        <p class="text-[10px] font-black uppercase text-emerald-500 mb-1">Onaylanan</p>
-                        <p class="text-3xl font-black text-emerald-600">${state.applicants.filter(a => a.status === 'approved').length}</p>
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm">
-                    <div class="p-6 border-b border-slate-100 flex items-center gap-3">
-                        <i data-lucide="search" class="text-slate-400 w-5 h-5"></i>
-                        <input type="text" placeholder="Aday ismi veya TC ara..." class="flex-1 outline-none text-sm font-medium" oninput="actions.searchApplicants(this.value)">
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left">
-                            <thead class="bg-slate-50/50 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
+                <div class="bg-white rounded-[32px] border overflow-hidden">
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-50 text-[10px] font-black uppercase text-slate-400">
+                            <tr><th class="px-6 py-4">Öğrenci</th><th class="px-6 py-4">TC</th><th class="px-6 py-4">Salon</th><th class="px-6 py-4">İşlem</th></tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            ${state.applicants.map(app => `
                                 <tr>
-                                    <th class="px-6 py-4">Öğrenci</th>
-                                    <th class="px-6 py-4">TC / Cinsiyet</th>
-                                    <th class="px-6 py-4">Sınıf</th>
-                                    <th class="px-6 py-4">Salon Atama</th>
-                                    <th class="px-6 py-4">Durum</th>
-                                    <th class="px-6 py-4">İşlem</th>
+                                    <td class="px-6 py-4 font-bold">${app.ad} ${app.soyad}</td>
+                                    <td class="px-6 py-4 font-mono">${app.tc}</td>
+                                    <td class="px-6 py-4">
+                                        <select onchange="actions.assignRoom('${app.id}', this.value)" class="text-xs border rounded p-1">
+                                            <option value="">Seç</option>
+                                            ${state.rooms.map(r => `<option value="${r.id}" ${app.room === r.id ? 'selected' : ''}>${r.name}</option>`).join('')}
+                                        </select>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <button onclick="actions.toggleAppStatus('${app.id}', '${app.status}')" class="text-[10px] font-black px-3 py-1 rounded-full ${app.status === 'approved' ? 'bg-emerald-600 text-white' : 'bg-slate-200'}">
+                                            ${app.status === 'approved' ? 'ONAYLI' : 'ONAYLA'}
+                                        </button>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-100">
-                                ${state.applicants.map(app => `
-                                    <tr class="hover:bg-slate-50/50 transition-colors">
-                                        <td class="px-6 py-4">
-                                            <div class="font-black text-slate-800">${app.ad} ${app.soyad}</div>
-                                            <div class="text-[10px] text-slate-400 font-bold uppercase">${app.ilkokul || '-'}</div>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <div class="font-mono text-sm text-slate-600 tracking-tight">${app.tc}</div>
-                                            <div class="text-[10px] font-bold text-slate-400">${app.cinsiyet || '-'}</div>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <span class="text-[10px] font-black bg-blue-50 text-blue-600 px-2 py-1 rounded-md uppercase">${app.seviye || '-'}</span>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <select onchange="actions.assignRoom('${app.id}', this.value)" class="text-[10px] font-bold border border-slate-200 rounded-lg p-1.5 focus:border-purple-500 outline-none">
-                                                <option value="">Salon Seç</option>
-                                                ${state.rooms.map(r => `<option value="${r.id}" ${app.room === r.id ? 'selected' : ''}>${r.name}</option>`).join('')}
-                                            </select>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <button onclick="actions.toggleAppStatus('${app.id}', '${app.status}')" class="text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest transition-all ${app.status === 'approved' ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-600 hover:bg-amber-200'}">
-                                                ${app.status === 'approved' ? 'Onaylı' : 'Onayla'}
-                                            </button>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <div class="flex gap-2">
-                                                <button onclick="actions.viewAppDetails('${app.id}')" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><i data-lucide="info" class="w-4 h-4"></i></button>
-                                                <button onclick="actions.deleteApp('${app.id}')" class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
+                            `).join('')}
+                        </tbody>
+                    </table>
                 </div>
             `,
 
             adminFields: () => `
-                <div class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <h2 class="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3">
-                        <i data-lucide="clipboard-signature" class="text-purple-600"></i> Form Yapılandırma
-                    </h2>
-                    <div class="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
-                        <button onclick="router.navigate('admin-dashboard')" class="px-4 py-2 rounded-xl text-xs font-black uppercase text-slate-500 hover:bg-slate-50">Adaylar</button>
-                        <button onclick="router.navigate('admin-fields')" class="px-4 py-2 rounded-xl text-xs font-black uppercase bg-purple-600 text-white">Form Ayarları</button>
-                        <button onclick="router.navigate('admin-rooms')" class="px-4 py-2 rounded-xl text-xs font-black uppercase text-slate-500 hover:bg-slate-50">Salonlar</button>
-                    </div>
+                <div class="mb-8 flex justify-between items-center">
+                    <h2 class="text-2xl font-black">FORM AYARLARI</h2>
+                    <button onclick="router.navigate('admin-dashboard')" class="text-sm font-bold text-slate-400">Geri Dön</button>
                 </div>
-
-                <div class="bg-white p-10 rounded-[40px] border border-slate-200 shadow-sm mb-12">
-                    <div class="mb-8 border-b border-slate-100 pb-6">
-                        <h4 class="font-black text-slate-800 uppercase tracking-tight">Dinamik Form Kontrolü</h4>
-                        <p class="text-sm text-slate-400 mt-1">Hangi alanların görüneceğini ve hangilerinin zorunlu olacağını buradan yönetebilirsiniz.</p>
-                    </div>
-                    <div class="grid md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-4 custom-scrollbar">
-                        ${FIELD_MASTER_LIST.map(f => {
-                            const conf = state.settings.fields[f.id] || { active: false, required: false };
-                            return `
-                                <div class="p-5 border border-slate-100 rounded-[24px] bg-slate-50/50 flex flex-col gap-4">
-                                    <div class="flex items-center justify-between">
-                                        <span class="text-xs font-black text-slate-700 uppercase tracking-tight">${f.label}</span>
-                                        <span class="text-[9px] font-bold text-slate-300 uppercase">${f.group}</span>
-                                    </div>
-                                    <div class="flex gap-4">
-                                        <label class="flex-1 flex items-center gap-2 cursor-pointer group">
-                                            <input type="checkbox" ${conf.active ? 'checked' : ''} onchange="actions.updateFieldSetting('${f.id}', 'active', this.checked)" class="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500">
-                                            <span class="text-[10px] font-bold uppercase text-slate-500 group-hover:text-purple-600 transition-colors">Aktif</span>
-                                        </label>
-                                        <label class="flex-1 flex items-center gap-2 cursor-pointer group">
-                                            <input type="checkbox" ${conf.required ? 'checked' : ''} onchange="actions.updateFieldSetting('${f.id}', 'required', this.checked)" class="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-500">
-                                            <span class="text-[10px] font-bold uppercase text-slate-500 group-hover:text-red-600 transition-colors">Zorunlu</span>
-                                        </label>
-                                    </div>
+                <div class="grid md:grid-cols-2 gap-4">
+                    ${FIELD_MASTER_LIST.map(f => {
+                        const conf = state.settings?.fields?.[f.id] || { active: false, required: false };
+                        return `
+                            <div class="p-4 bg-white border rounded-2xl flex items-center justify-between">
+                                <span class="text-xs font-black">${f.label}</span>
+                                <div class="flex gap-4">
+                                    <label class="text-[10px] flex items-center gap-1 font-bold"><input type="checkbox" ${conf.active ? 'checked' : ''} onchange="actions.updateFieldSetting('${f.id}', 'active', this.checked)"> AKTİF</label>
+                                    <label class="text-[10px] flex items-center gap-1 font-bold"><input type="checkbox" ${conf.required ? 'checked' : ''} onchange="actions.updateFieldSetting('${f.id}', 'required', this.checked)"> ZORUNLU</label>
                                 </div>
-                            `;
-                        }).join('')}
-                    </div>
+                            </div>
+                        `;
+                    }).join('')}
                 </div>
             `,
 
             adminRooms: () => `
-                <div class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <h2 class="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-3">
-                        <i data-lucide="map-pin" class="text-purple-600"></i> Sınav Salonları
-                    </h2>
-                    <div class="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
-                        <button onclick="router.navigate('admin-dashboard')" class="px-4 py-2 rounded-xl text-xs font-black uppercase text-slate-500 hover:bg-slate-50">Adaylar</button>
-                        <button onclick="router.navigate('admin-fields')" class="px-4 py-2 rounded-xl text-xs font-black uppercase text-slate-500 hover:bg-slate-50">Form Ayarları</button>
-                        <button onclick="router.navigate('admin-rooms')" class="px-4 py-2 rounded-xl text-xs font-black uppercase bg-purple-600 text-white">Salonlar</button>
-                    </div>
+                <div class="mb-8 flex justify-between items-center">
+                    <h2 class="text-2xl font-black">SALONLAR</h2>
+                    <button onclick="router.navigate('admin-dashboard')" class="text-sm font-bold text-slate-400">Geri Dön</button>
                 </div>
-
-                <div class="grid md:grid-cols-2 gap-8">
-                    <div class="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm h-fit">
-                        <h4 class="font-black text-slate-800 mb-6 uppercase tracking-tight">Yeni Salon Ekle</h4>
-                        <div class="space-y-4">
-                            <input type="text" id="new-room-name" placeholder="Örn: Derslik 1-A" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-purple-500 transition-all">
-                            <button onclick="actions.addRoom()" class="w-full bg-purple-600 text-white font-black py-3 rounded-xl hover:bg-purple-700 transition-all shadow-lg shadow-purple-200">SALONU KAYDET</button>
-                        </div>
-                    </div>
-                    <div class="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-                        <h4 class="font-black text-slate-800 mb-6 uppercase tracking-tight">Tanımlı Salonlar</h4>
-                        <div class="space-y-3">
-                            ${state.rooms.map(r => `
-                                <div class="p-4 bg-slate-50 rounded-2xl flex items-center justify-between border border-slate-100">
-                                    <span class="font-bold text-slate-700">${r.name}</span>
-                                    <button onclick="actions.deleteRoom('${r.id}')" class="text-red-500 hover:text-red-700 transition-colors"><i data-lucide="x-circle" class="w-5 h-5"></i></button>
-                                </div>
-                            `).join('')}
-                            ${state.rooms.length === 0 ? '<p class="text-slate-400 text-sm italic">Henüz salon eklenmemiş.</p>' : ''}
-                        </div>
-                    </div>
+                <div class="bg-white p-6 rounded-[32px] border mb-6">
+                    <input type="text" id="new-room-name" placeholder="Yeni Salon Adı" class="border p-2 rounded-xl mr-2">
+                    <button onclick="actions.addRoom()" class="bg-purple-600 text-white px-4 py-2 rounded-xl font-bold">EKLE</button>
+                </div>
+                <div class="space-y-2">
+                    ${state.rooms.map(r => `<div class="p-4 bg-white border rounded-2xl flex justify-between"><span>${r.name}</span> <button onclick="actions.deleteRoom('${r.id}')" class="text-red-500 font-bold">Sil</button></div>`).join('')}
                 </div>
             `
         };
 
-        // ACTIONS
         const actions = {
-            parentLogin: async () => {
+            parentLogin: () => {
                 const tc = document.getElementById('login-tc').value.trim();
-                if (tc.length !== 11) {
-                    showToast("Lütfen 11 haneli T.C. Kimlik numaranızı girin.", "error");
-                    return;
-                }
+                if (tc.length !== 11) { showToast("11 hane giriniz.", "error"); return; }
                 state.parentTc = tc;
                 const existing = state.applicants.find(a => a.tc === tc);
-                if (existing) {
-                    state.applicantData = existing;
-                    router.navigate('parent-status');
-                } else {
-                    router.navigate('parent-form');
-                }
+                if (existing) { state.applicantData = existing; router.navigate('parent-status'); }
+                else router.navigate('parent-form');
             },
-
             saveApplication: async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.target);
                 const data = Object.fromEntries(formData.entries());
-                data.tc = state.parentTc;
-                data.status = 'pending';
-                data.room = '';
-                data.createdAt = new Date().toISOString();
-
+                data.tc = state.parentTc; data.status = 'pending'; data.room = '';
                 try {
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'applicants', state.parentTc);
-                    await setDoc(docRef, data);
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'applicants', state.parentTc), data);
                     state.applicantData = data;
-                    showToast("Başvurunuz başarıyla kaydedildi.");
+                    showToast("Kaydedildi.");
                     router.navigate('parent-status');
-                } catch (err) {
-                    showToast("Kayıt sırasında hata oluştu.", "error");
-                    console.error(err);
-                }
+                } catch (err) { showToast("Hata!", "error"); }
             },
-
             adminLogin: () => {
-                const pass = document.getElementById('admin-pass').value;
-                if (pass === "admin123") {
-                    state.adminAuth = true;
-                    router.navigate('admin-dashboard');
-                    showToast("Hoş geldiniz.");
-                } else {
-                    showToast("Hatalı şifre!", "error");
-                }
+                if (document.getElementById('admin-pass').value === "admin123") {
+                    state.adminAuth = true; router.navigate('admin-dashboard');
+                } else showToast("Hatalı!", "error");
             },
-
-            toggleAppStatus: async (id, currentStatus) => {
-                if (!state.user) return;
-                const newStatus = currentStatus === 'approved' ? 'pending' : 'approved';
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'applicants', id);
-                await updateDoc(docRef, { status: newStatus });
-                showToast("Öğrenci durumu güncellendi.");
+            toggleAppStatus: async (id, current) => {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'applicants', id), { status: current === 'approved' ? 'pending' : 'approved' });
             },
-
-            deleteApp: async (id) => {
-                if (!confirm("Bu başvuruyu tamamen silmek istediğinize emin misiniz?")) return;
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'applicants', id);
-                await updateDoc(docRef, { _deleted: true }); // Soft delete or logic for actual delete
-                showToast("Başvuru silindi.");
+            assignRoom: async (id, room) => {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'applicants', id), { room });
             },
-
-            assignRoom: async (studentId, roomId) => {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'applicants', studentId);
-                await updateDoc(docRef, { room: roomId });
-                showToast("Salon ataması güncellendi.");
-            },
-
             addRoom: async () => {
-                const name = document.getElementById('new-room-name').value.trim();
-                if (!name) return;
-                const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms');
-                await addDoc(colRef, { name });
-                document.getElementById('new-room-name').value = '';
-                showToast("Salon eklendi.");
+                const name = document.getElementById('new-room-name').value;
+                if (name) await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms'), { name });
             },
-
-            updateFieldSetting: async (fieldId, prop, value) => {
-                const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+            deleteRoom: async (id) => {
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', id));
+                showToast("Salon silindi.");
+            },
+            updateFieldSetting: async (fId, prop, val) => {
                 const newFields = { ...state.settings.fields };
-                if (!newFields[fieldId]) newFields[fieldId] = { active: false, required: false };
-                newFields[fieldId][prop] = value;
-                await updateDoc(settingsRef, { fields: newFields });
-            },
-
-            searchApplicants: (val) => {
-                // In a real scenario, we might use a separate state for filtered data
-                // For this demo, we can just re-render or filter the DOM rows
-                const rows = document.querySelectorAll('tbody tr');
-                rows.forEach(row => {
-                    const text = row.innerText.toLowerCase();
-                    row.style.display = text.includes(val.toLowerCase()) ? '' : 'none';
-                });
+                if (!newFields[fId]) newFields[fId] = { active: false, required: false };
+                newFields[fId][prop] = val;
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config'), { fields: newFields });
             }
         };
 
-        // INITIALIZATION
         window.addEventListener('DOMContentLoaded', async () => {
-            // Rule 3: Auth Before Queries
             try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (e) { console.error("Auth init failed", e); }
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
+                else await signInAnonymously(auth);
+            } catch (e) { console.warn("Anonim giriş yapılamadı."); }
 
             onAuthStateChanged(auth, (u) => {
                 state.user = u;
                 if (u) {
-                    initDataListeners();
-                    document.getElementById('loader').classList.add('hidden');
+                    onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config'), (s) => {
+                        if (s.exists()) state.settings = s.data();
+                        else {
+                            const initial = { schoolName: "Fatma ve Mehmet Karaca İmam Hatip Ortaokulu", fields: {} };
+                            FIELD_MASTER_LIST.forEach(f => initial.fields[f.id] = { active: true, required: ['ad', 'soyad', 'dogumTarihi', 'seviye', 'cinsiyet'].includes(f.id) });
+                            setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config'), initial);
+                            state.settings = initial;
+                        }
+                        render();
+                    });
+                    onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'applicants'), (snap) => {
+                        state.applicants = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                        render();
+                    });
+                    onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'rooms'), (snap) => {
+                        state.rooms = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                        render();
+                    });
+                    document.getElementById('loader').style.display = 'none';
                 }
             });
         });
 
-        const initDataListeners = () => {
-            // Rule 1: Strict Paths
-            const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
-            onSnapshot(settingsRef, (s) => {
-                if (s.exists()) {
-                    state.settings = s.data();
-                } else {
-                    const initialFields = {};
-                    FIELD_MASTER_LIST.forEach(f => {
-                        initialFields[f.id] = { active: true, required: ['ad', 'soyad', 'dogumTarihi', 'seviye', 'cinsiyet'].includes(f.id) };
-                    });
-                    const initialData = { schoolName: "Fatma ve Mehmet Karaca İmam Hatip Ortaokulu", fields: initialFields };
-                    setDoc(settingsRef, initialData);
-                    state.settings = initialData;
-                }
-                render();
-            }, (err) => showToast("Ayarlar okunamadı.", "error"));
-
-            const applicantsCol = collection(db, 'artifacts', appId, 'public', 'data', 'applicants');
-            onSnapshot(applicantsCol, (snap) => {
-                state.applicants = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => !a._deleted);
-                render();
-            });
-
-            const roomsCol = collection(db, 'artifacts', appId, 'public', 'data', 'rooms');
-            onSnapshot(roomsCol, (snap) => {
-                state.rooms = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                render();
-            });
-        };
-
-        // Attach actions to window for HTML accessibility
-        window.actions = actions;
-        window.router = router;
+        window.actions = actions; window.router = router;
     </script>
 </body>
 </html>

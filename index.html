@@ -527,6 +527,70 @@
             selectionMode[ctx] = false;
         };
 
+        window.getVisibleSelectionIds = () => {
+            if (activeTab === 'transactions') return window.getFilteredTransactions(currentTxView).map(item => item.id);
+            if (activeTab === 'kurban') return window.getFilteredKurbans().map(item => item.id);
+            return [];
+        };
+
+        window.updateSelectionButtonState = (button, checked) => {
+            if (!button) return;
+            button.classList.toggle('bg-blue-600', checked);
+            button.classList.toggle('border-blue-600', checked);
+            button.classList.toggle('text-white', checked);
+            button.classList.toggle('bg-white', !checked);
+            button.classList.toggle('border-gray-300', !checked);
+            button.classList.toggle('text-transparent', !checked);
+            button.setAttribute('aria-pressed', checked ? 'true' : 'false');
+            button.dataset.checked = checked ? '1' : '0';
+        };
+
+        window.refreshSelectionSummary = () => {
+            const ctx = window.getSelectionContext();
+            if (!ctx) return;
+
+            const selectedCount = selectedItems[ctx] ? selectedItems[ctx].size : 0;
+            const summaryEl = document.getElementById('selection-summary');
+            if (summaryEl) {
+                summaryEl.textContent = selectedCount > 0 ? `${selectedCount} kayıt seçildi` : 'Seçim yok';
+            }
+
+            const toggleBtnText = document.getElementById('selection-toggle-text');
+            if (toggleBtnText) {
+                toggleBtnText.textContent = selectionMode[ctx] ? 'Seçimi Kapat' : 'Seç';
+            }
+
+            const bulkActions = document.getElementById('bulk-selection-actions');
+            if (bulkActions) {
+                bulkActions.classList.toggle('hidden', !selectionMode[ctx]);
+            }
+
+            const visibleIds = window.getVisibleSelectionIds();
+            const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedItems[ctx].has(id));
+
+            const selectAllText = document.getElementById('select-all-text');
+            if (selectAllText) {
+                selectAllText.textContent = allSelected ? 'Seçimi Kaldır' : 'Tümünü Seç';
+            }
+
+            const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+            if (bulkDeleteBtn) {
+                bulkDeleteBtn.disabled = selectedCount === 0;
+                bulkDeleteBtn.classList.toggle('opacity-50', selectedCount === 0);
+                bulkDeleteBtn.classList.toggle('cursor-not-allowed', selectedCount === 0);
+            }
+        };
+
+        window.syncSelectionButtons = () => {
+            const ctx = window.getSelectionContext();
+            if (!ctx) return;
+            const selectedSet = selectedItems[ctx];
+            document.querySelectorAll('[data-select-id]').forEach(btn => {
+                window.updateSelectionButtonState(btn, selectedSet.has(btn.dataset.selectId));
+            });
+            window.refreshSelectionSummary();
+        };
+
         window.toggleSelectionMode = () => {
             const ctx = window.getSelectionContext();
             if (!ctx) return;
@@ -538,26 +602,27 @@
         window.toggleItemSelection = (id) => {
             const ctx = window.getSelectionContext();
             if (!ctx) return;
+
             if (selectedItems[ctx].has(id)) selectedItems[ctx].delete(id);
             else selectedItems[ctx].add(id);
-            window.renderApp();
+
+            const button = document.querySelector(`[data-select-id="${id}"]`);
+            window.updateSelectionButtonState(button, selectedItems[ctx].has(id));
+            window.refreshSelectionSummary();
         };
 
         window.selectAllVisibleItems = () => {
             const ctx = window.getSelectionContext();
             if (!ctx) return;
 
-            let ids = [];
-            if (activeTab === 'transactions') ids = window.getFilteredTransactions(currentTxView).map(item => item.id);
-            if (activeTab === 'kurban') ids = window.getFilteredKurbans().map(item => item.id);
-
+            const ids = window.getVisibleSelectionIds();
             const targetSet = selectedItems[ctx];
             const allSelected = ids.length > 0 && ids.every(id => targetSet.has(id));
 
             if (allSelected) ids.forEach(id => targetSet.delete(id));
             else ids.forEach(id => targetSet.add(id));
 
-            window.renderApp();
+            window.syncSelectionButtons();
         };
 
         window.bulkSoftDeleteSelected = async () => {
@@ -947,7 +1012,7 @@
                     <tr class="${tableRowHoverClass}">
                         ${selectionActive ? `
                         <td class="p-4 text-center">
-                            <button type="button" onclick="window.toggleItemSelection('${tx.id}')" class="w-5 h-5 rounded border flex items-center justify-center transition-colors ${checked ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-transparent'}">
+                            <button type="button" data-select-id="${tx.id}" aria-pressed="${checked ? 'true' : 'false'}" onclick="window.toggleItemSelection('${tx.id}')" class="w-5 h-5 rounded border flex items-center justify-center transition-colors ${checked ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-transparent'}">
                                 <i data-lucide="check" class="w-4 h-4"></i>
                             </button>
                         </td>` : ''}
@@ -1006,6 +1071,7 @@
                     Net Toplam: <span class="font-bold text-xl ${netColorText}">${window.formatMoney(filteredNet)}</span>
                 </div>
             `;
+            window.refreshSelectionSummary();
             lucide.createIcons();
         };
 
@@ -1097,6 +1163,7 @@
 
             if (filtered.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="${selectionActive ? 9 : 8}" class="p-8 text-center text-gray-500">Kriterlere uygun kurban kaydı bulunamadı.</td></tr>`;
+                window.refreshSelectionSummary();
                 return;
             }
 
@@ -1108,7 +1175,7 @@
                     <tr class="hover:bg-gray-50 transition-colors">
                         ${selectionActive ? `
                         <td class="p-4 text-center">
-                            <button type="button" onclick="window.toggleItemSelection('${k.id}')" class="w-5 h-5 rounded border flex items-center justify-center transition-colors ${checked ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-transparent'}">
+                            <button type="button" data-select-id="${k.id}" aria-pressed="${checked ? 'true' : 'false'}" onclick="window.toggleItemSelection('${k.id}')" class="w-5 h-5 rounded border flex items-center justify-center transition-colors ${checked ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-transparent'}">
                                 <i data-lucide="check" class="w-4 h-4"></i>
                             </button>
                         </td>` : ''}
@@ -3180,15 +3247,17 @@
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
                                 <button type="button" onclick="window.toggleSelectionMode()" class="text-sm bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="check-square" class="w-4 h-4"></i> ${window.isSelectionModeActive() ? 'Seçimi Kapat' : 'Seç'}
+                                    <i data-lucide="check-square" class="w-4 h-4"></i> <span id="selection-toggle-text">${window.isSelectionModeActive() ? 'Seçimi Kapat' : 'Seç'}</span>
                                 </button>
-                                ${window.isSelectionModeActive() ? `
-                                <button type="button" onclick="window.selectAllVisibleItems()" class="text-sm bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-100 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="list-checks" class="w-4 h-4"></i> Tümünü Seç
-                                </button>
-                                <button type="button" onclick="window.bulkSoftDeleteSelected()" class="text-sm bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-md hover:bg-red-100 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="trash" class="w-4 h-4"></i> Seçilenleri Sil
-                                </button>` : ''}
+                                <span id="selection-summary" class="text-xs text-gray-500 ${window.isSelectionModeActive() ? '' : 'hidden sm:inline'}">${window.getSelectedSet().size > 0 ? `${window.getSelectedSet().size} kayıt seçildi` : 'Seçim yok'}</span>
+                                <div id="bulk-selection-actions" class="flex flex-wrap items-center gap-2 ${window.isSelectionModeActive() ? '' : 'hidden'}">
+                                    <button type="button" onclick="window.selectAllVisibleItems()" class="text-sm bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-100 flex items-center gap-2 transition-colors">
+                                        <i data-lucide="list-checks" class="w-4 h-4"></i> <span id="select-all-text">Tümünü Seç</span>
+                                    </button>
+                                    <button type="button" id="bulk-delete-btn" onclick="window.bulkSoftDeleteSelected()" class="text-sm bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-md hover:bg-red-100 flex items-center gap-2 transition-colors ${window.getSelectedSet().size === 0 ? 'opacity-50 cursor-not-allowed' : ''}" ${window.getSelectedSet().size === 0 ? 'disabled' : ''}>
+                                        <i data-lucide="trash" class="w-4 h-4"></i> Seçilenleri Sil
+                                    </button>
+                                </div>
                                 <input type="file" id="importExcelInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="window.importFromExcel(event)" />
                                 <button type="button" onclick="window.triggerImport()" class="text-sm bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 flex items-center gap-2 transition-colors">
                                     <i data-lucide="upload" class="w-4 h-4"></i> İçe Aktar
@@ -3418,15 +3487,17 @@
                                 <span id="kurban-count-span" class="text-sm text-gray-500">${kList.length} kayıt</span>
                                 <div class="w-px h-4 bg-gray-300"></div>
                                 <button type="button" onclick="window.toggleSelectionMode()" class="text-sm bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="check-square" class="w-4 h-4"></i> ${window.isSelectionModeActive() ? 'Seçimi Kapat' : 'Seç'}
+                                    <i data-lucide="check-square" class="w-4 h-4"></i> <span id="selection-toggle-text">${window.isSelectionModeActive() ? 'Seçimi Kapat' : 'Seç'}</span>
                                 </button>
-                                ${window.isSelectionModeActive() ? `
-                                <button type="button" onclick="window.selectAllVisibleItems()" class="text-sm bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-100 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="list-checks" class="w-4 h-4"></i> Tümünü Seç
-                                </button>
-                                <button type="button" onclick="window.bulkSoftDeleteSelected()" class="text-sm bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-md hover:bg-red-100 flex items-center gap-2 transition-colors">
-                                    <i data-lucide="trash" class="w-4 h-4"></i> Seçilenleri Sil
-                                </button>` : ''}
+                                <span id="selection-summary" class="text-xs text-gray-500 ${window.isSelectionModeActive() ? '' : 'hidden sm:inline'}">${window.getSelectedSet().size > 0 ? `${window.getSelectedSet().size} kayıt seçildi` : 'Seçim yok'}</span>
+                                <div id="bulk-selection-actions" class="flex flex-wrap items-center gap-2 ${window.isSelectionModeActive() ? '' : 'hidden'}">
+                                    <button type="button" onclick="window.selectAllVisibleItems()" class="text-sm bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-100 flex items-center gap-2 transition-colors">
+                                        <i data-lucide="list-checks" class="w-4 h-4"></i> <span id="select-all-text">Tümünü Seç</span>
+                                    </button>
+                                    <button type="button" id="bulk-delete-btn" onclick="window.bulkSoftDeleteSelected()" class="text-sm bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-md hover:bg-red-100 flex items-center gap-2 transition-colors ${window.getSelectedSet().size === 0 ? 'opacity-50 cursor-not-allowed' : ''}" ${window.getSelectedSet().size === 0 ? 'disabled' : ''}>
+                                        <i data-lucide="trash" class="w-4 h-4"></i> Seçilenleri Sil
+                                    </button>
+                                </div>
                                 <input type="file" id="importKurbanExcelInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="window.importKurbanFromExcel(event)" />
                                 <button type="button" onclick="window.triggerKurbanImport()" class="text-sm bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 flex items-center gap-2 transition-colors">
                                     <i data-lucide="upload" class="w-4 h-4"></i> İçe Aktar
@@ -3706,6 +3777,7 @@
                 window.updateKbFilteredView();
             }
 
+            window.refreshSelectionSummary();
             lucide.createIcons();
 
             if (activeElementId) {

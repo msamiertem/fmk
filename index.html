@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -150,11 +151,74 @@
         </div>
     </div>
 
-    <!-- İçe Aktarım Onay Modalı -->
-    <div id="import-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity"></div>
-
     <!-- Hata Mesajı (Toast) -->
     <div id="toast">Lütfen zorunlu alanları doldurun.</div>
+
+    <!-- Excel İçe Aktarma Önizleme Penceresi -->
+    <div id="import-preview-modal" class="hidden fixed inset-0 z-[60] bg-black/50 p-4 md:p-6">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-full max-h-[92vh] mx-auto flex flex-col overflow-hidden">
+            <div class="flex items-start justify-between gap-4 p-5 border-b border-gray-200">
+                <div>
+                    <h3 class="text-xl font-bold text-gray-800">Excel İçe Aktarma Önizlemesi</h3>
+                    <p id="import-preview-summary" class="text-sm text-gray-500 mt-1"></p>
+                </div>
+                <button type="button" onclick="window.closeImportPreview()" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div id="import-preview-warning" class="hidden mx-5 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"></div>
+
+            <div class="px-5 py-4 border-b border-gray-100 bg-gray-50 flex flex-wrap items-center gap-3 text-sm">
+                <div class="inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 px-3 py-2">
+                    <i data-lucide="percent" class="w-4 h-4 text-blue-600"></i>
+                    <span>Ayarlar oranı:</span>
+                    <strong id="import-preview-rate">%0</strong>
+                </div>
+                <div class="inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 px-3 py-2">
+                    <i data-lucide="file-spreadsheet" class="w-4 h-4 text-green-600"></i>
+                    <span id="import-preview-file">Dosya seçilmedi</span>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-auto">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-white sticky top-0 z-10 border-b border-gray-200">
+                        <tr class="text-left text-gray-600">
+                            <th class="p-3 font-medium">#</th>
+                            <th class="p-3 font-medium">Tarih</th>
+                            <th class="p-3 font-medium">Tip</th>
+                            <th class="p-3 font-medium">Banka</th>
+                            <th class="p-3 font-medium">Kategori</th>
+                            <th class="p-3 font-medium">Ülke</th>
+                            <th class="p-3 font-medium">Açıklama</th>
+                            <th class="p-3 font-medium text-right">Miktar</th>
+                            <th class="p-3 font-medium text-right">Dernek Kesintisi</th>
+                            <th class="p-3 font-medium text-right">Kalan</th>
+                        </tr>
+                    </thead>
+                    <tbody id="import-preview-tbody"></tbody>
+                </table>
+            </div>
+
+            <div class="p-5 border-t border-gray-200 bg-white flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div class="text-sm text-gray-600">
+                    <span id="import-preview-footer-count">0 satır</span>
+                    <span class="mx-2 text-gray-300">•</span>
+                    <span id="import-preview-footer-deduction">Toplam kesinti: ₺0,00</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button type="button" onclick="window.closeImportPreview()" class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">
+                        Vazgeç
+                    </button>
+                    <button type="button" onclick="window.confirmImportPreview()" class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm flex items-center gap-2">
+                        <i data-lucide="upload" class="w-4 h-4"></i>
+                        Önizlemeyi Onayla ve Aktar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -220,10 +284,6 @@
         let filterSearch = '';
         let sortColumn = 'date'; 
         let sortOrder = 'desc';
-        
-        // Toplu Seçim (İşlemler)
-        let isTxSelectionMode = false;
-        let selectedTxs = [];
 
         // Kurban Özel State'leri
         let editingKurbanId = null;
@@ -236,13 +296,24 @@
         let sortKbColumn = 'date'; 
         let sortKbOrder = 'desc';
 
-        // Toplu Seçim (Kurban)
-        let isKbSelectionMode = false;
-        let selectedKbs = [];
+        // Toplu Seçim State'leri
+        let selectionMode = {
+            transactions_general: false,
+            transactions_dernek: false,
+            kurban: false
+        };
 
-        // İçe Aktarım Modal State'leri
-        window.pendingImports = [];
-        window.showImportModal = false;
+        let selectedItems = {
+            transactions_general: new Set(),
+            transactions_dernek: new Set(),
+            kurban: new Set()
+        };
+
+        // Excel Önizleme State'leri
+        let importPreviewRows = [];
+        let importPreviewFileName = '';
+        let importPreviewViewDomain = 'general';
+        let importPreviewBusy = false;
 
         // --- Event Listeners ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -322,7 +393,7 @@
         window.showToast = (message) => {
             const toast = document.getElementById("toast");
             toast.textContent = message;
-            if (message.includes('kaydedildi') || message.includes('eklendi') || message.includes('yüklendi') || message.includes('taşındı') || message.includes('güncellendi') || message.includes('alındı') || message.includes('Aktarıldı')) {
+            if (message.includes('kaydedildi') || message.includes('eklendi') || message.includes('yüklendi') || message.includes('taşındı') || message.includes('güncellendi') || message.includes('alındı')) {
                 toast.style.backgroundColor = '#16a34a'; 
             } else {
                 toast.style.backgroundColor = '#ef4444'; 
@@ -409,7 +480,6 @@
             const dropdown = document.getElementById('kbCountryDropdown');
             if (!dropdown) return;
             
-            // Kurban için ülkeyi kategorilerden DEĞİL, kurbans tablosundaki ülkelerden çekiyoruz
             const uniqueKbCountries = [...new Set(kurbans.filter(k => !k.deleted && k.country).map(k => k.country))].sort();
             const matched = val === '' 
                 ? uniqueKbCountries 
@@ -433,6 +503,146 @@
             if (input) input.value = name;
             const dropdown = document.getElementById('kbCountryDropdown');
             if (dropdown) dropdown.classList.add('hidden');
+        };
+
+        window.getSelectionContext = () => {
+            if (activeTab === 'transactions') return 'transactions_' + currentTxView;
+            if (activeTab === 'kurban') return 'kurban';
+            return null;
+        };
+
+        window.isSelectionModeActive = () => {
+            const ctx = window.getSelectionContext();
+            return ctx ? !!selectionMode[ctx] : false;
+        };
+
+        window.getSelectedSet = () => {
+            const ctx = window.getSelectionContext();
+            return ctx ? selectedItems[ctx] : new Set();
+        };
+
+        window.clearSelectionForContext = (ctx) => {
+            if (!ctx || !selectedItems[ctx]) return;
+            selectedItems[ctx].clear();
+            selectionMode[ctx] = false;
+        };
+
+        window.toggleSelectionMode = () => {
+            const ctx = window.getSelectionContext();
+            if (!ctx) return;
+            selectionMode[ctx] = !selectionMode[ctx];
+            if (!selectionMode[ctx]) selectedItems[ctx].clear();
+            window.renderApp();
+        };
+
+        window.toggleItemSelection = (id) => {
+            const ctx = window.getSelectionContext();
+            if (!ctx) return;
+            if (selectedItems[ctx].has(id)) selectedItems[ctx].delete(id);
+            else selectedItems[ctx].add(id);
+            window.renderApp();
+        };
+
+        window.selectAllVisibleItems = () => {
+            const ctx = window.getSelectionContext();
+            if (!ctx) return;
+
+            let ids = [];
+            if (activeTab === 'transactions') ids = window.getFilteredTransactions(currentTxView).map(item => item.id);
+            if (activeTab === 'kurban') ids = window.getFilteredKurbans().map(item => item.id);
+
+            const targetSet = selectedItems[ctx];
+            const allSelected = ids.length > 0 && ids.every(id => targetSet.has(id));
+
+            if (allSelected) ids.forEach(id => targetSet.delete(id));
+            else ids.forEach(id => targetSet.add(id));
+
+            window.renderApp();
+        };
+
+        window.bulkSoftDeleteSelected = async () => {
+            const ctx = window.getSelectionContext();
+            if (!ctx) return;
+
+            const ids = Array.from(selectedItems[ctx]);
+            if (ids.length === 0) {
+                window.showToast('Lütfen önce silinecek kayıtları seçin.');
+                return;
+            }
+
+            window.confirmAction(`${ids.length} kaydı çöp kutusuna taşımak istediğinize emin misiniz?`, async () => {
+                try {
+                    const now = Date.now();
+                    const actionChanges = [];
+
+                    for (const id of ids) {
+                        if (ctx === 'kurban') {
+                            const oldItem = kurbans.find(k => k.id === id && !k.deleted);
+                            if (!oldItem) continue;
+
+                            actionChanges.push({
+                                type: 'UPDATE',
+                                collection: 'kurbans',
+                                id: id,
+                                oldData: { ...oldItem },
+                                newData: { deleted: true, deletedAt: now }
+                            });
+
+                            if (isLocalMode) {
+                                oldItem.deleted = true;
+                                oldItem.deletedAt = now;
+                            } else {
+                                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'kurbans', id), { deleted: true, deletedAt: now });
+                            }
+                        } else {
+                            const oldItem = transactions.find(t => t.id === id && !t.deleted);
+                            if (!oldItem) continue;
+
+                            actionChanges.push({
+                                type: 'UPDATE',
+                                collection: 'transactions',
+                                id: id,
+                                oldData: { ...oldItem },
+                                newData: { deleted: true, deletedAt: now }
+                            });
+
+                            let linkedId = 'inc_' + id;
+                            let linkedTx = transactions.find(t => t.id === linkedId && !t.deleted);
+                            if (linkedTx) {
+                                actionChanges.push({
+                                    type: 'UPDATE',
+                                    collection: 'transactions',
+                                    id: linkedId,
+                                    oldData: { ...linkedTx },
+                                    newData: { deleted: true, deletedAt: now }
+                                });
+                            }
+
+                            if (isLocalMode) {
+                                oldItem.deleted = true;
+                                oldItem.deletedAt = now;
+                                if (linkedTx) {
+                                    linkedTx.deleted = true;
+                                    linkedTx.deletedAt = now;
+                                }
+                            } else {
+                                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id), { deleted: true, deletedAt: now });
+                                if (linkedTx) {
+                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', linkedId), { deleted: true, deletedAt: now });
+                                }
+                            }
+                        }
+                    }
+
+                    if (actionChanges.length > 0) window.pushAction(actionChanges, 'Toplu kayıt silme');
+                    selectedItems[ctx].clear();
+                    selectionMode[ctx] = false;
+                    window.renderApp();
+                    window.showToast('Seçilen kayıtlar çöp kutusuna taşındı.');
+                } catch (e) {
+                    window.showToast('Toplu silme sırasında hata oluştu.');
+                }
+            });
         };
 
         // --- Geri Al / İleri Al İşlemleri ---
@@ -590,7 +800,7 @@
             if (dataLoaded.banks && dataLoaded.categories && dataLoaded.transactions && dataLoaded.settings && dataLoaded.kurbans) window.renderApp();
         };
 
-        // --- Finans Veri İşleme (Hesaplamalar & Filtreleme) ---
+        // --- Finans Veri İşleme ---
         window.updateRemainingExpense = () => {
             if (txType !== 'expense' || currentTxView !== 'general') return;
             const amount = parseFloat(document.getElementById('txAmount')?.value) || 0;
@@ -714,8 +924,11 @@
         };
 
         window.getHistoryHtml = (transactionsToRender, isDernek = false) => {
+            const selectionActive = window.isSelectionModeActive();
+            const selectedSet = window.getSelectedSet();
+
             if (transactionsToRender.length === 0) {
-                return `<tr><td colspan="${isDernek ? (isTxSelectionMode ? '8' : '7') : (isTxSelectionMode ? '9' : '8')}" class="p-8 text-center text-gray-500">Kriterlere uygun işlem bulunamadı.</td></tr>`;
+                return `<tr><td colspan="${selectionActive ? 9 : 8}" class="p-8 text-center text-gray-500">Kriterlere uygun işlem bulunamadı.</td></tr>`;
             }
             const tableCellTextClass = isDernek ? 'text-indigo-900' : 'text-gray-600';
             const tableRowHoverClass = isDernek ? 'hover:bg-indigo-50/60 transition-colors' : 'hover:bg-gray-50 transition-colors';
@@ -724,38 +937,34 @@
                 const bank = banks.find(b => b.id === tx.bankId);
                 const category = categories.find(c => c.id === tx.categoryId);
                 const country = categories.find(c => c.id === tx.countryId);
+                const checked = selectedSet.has(tx.id);
                 
                 let amountColorClass = isDernek ? (tx.type === 'income' ? 'text-indigo-700' : 'text-orange-600') : (tx.type === 'income' ? 'text-green-600' : 'text-red-600');
                 const editBtnClass = isDernek ? 'text-gray-400 hover:text-indigo-600' : 'text-gray-400 hover:text-blue-500';
                 const delBtnClass = 'text-gray-400 hover:text-red-500';
-                
-                const isSelected = selectedTxs.includes(tx.id);
-                const rowSelectClass = isSelected ? (isDernek ? 'bg-indigo-100/50' : 'bg-blue-50') : '';
-                const clickHandler = isTxSelectionMode ? `onclick="window.toggleTxSelection('${tx.id}')" style="cursor:pointer;"` : '';
-
-                const checkboxHtml = isTxSelectionMode ? `
-                    <td class="p-4 text-center w-12" onclick="event.stopPropagation(); window.toggleTxSelection('${tx.id}')">
-                        <input type="checkbox" onchange="window.toggleTxSelection('${tx.id}')" ${isSelected ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer pointer-events-none">
-                    </td>
-                ` : '';
 
                 return `
-                    <tr class="${tableRowHoverClass} ${rowSelectClass}" ${clickHandler}>
-                        ${checkboxHtml}
+                    <tr class="${tableRowHoverClass}">
+                        ${selectionActive ? `
+                        <td class="p-4 text-center">
+                            <button type="button" onclick="window.toggleItemSelection('${tx.id}')" class="w-5 h-5 rounded border flex items-center justify-center transition-colors ${checked ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-transparent'}">
+                                <i data-lucide="check" class="w-4 h-4"></i>
+                            </button>
+                        </td>` : ''}
                         <td class="p-4 text-sm ${tableCellTextClass} whitespace-nowrap">${window.formatDateTR(tx.date)}</td>
                         <td class="p-4 text-sm">${window.getTxTypeBadge(tx.type, isDernek)}</td>
                         <td class="p-4 text-sm font-medium ${isDernek ? 'text-indigo-950' : 'text-gray-800'}">${bank && bank.name ? bank.name : '-'}</td>
                         <td class="p-4 text-sm ${tableCellTextClass}">${category && category.name ? category.name : '-'}</td>
-                        ${!isDernek ? `<td class="p-4 text-sm ${tableCellTextClass}">${country && country.name ? country.name : '-'}</td>` : ''}
+                        <td class="p-4 text-sm ${tableCellTextClass}">${country && country.name ? country.name : '-'}</td>
                         <td class="p-4 text-sm ${tableCellTextClass}">${tx.description || '-'}</td>
                         <td class="p-4 text-sm font-semibold text-right whitespace-nowrap ${amountColorClass}">
                             ${tx.type === 'income' ? '+' : '-'}${window.formatMoney(tx.amount)}
                         </td>
                         <td class="p-4 text-center flex items-center justify-center space-x-2">
-                            <button type="button" onclick="event.stopPropagation(); window.startEditTransaction('${tx.id}')" class="${editBtnClass} transition-colors" title="Düzenle">
+                            <button type="button" onclick="window.startEditTransaction('${tx.id}')" class="${editBtnClass} transition-colors" title="Düzenle">
                                 <i data-lucide="edit-2" class="w-5 h-5"></i>
                             </button>
-                            <button type="button" onclick="event.stopPropagation(); window.handleSoftDeleteItem('${tx.id}', 'transactions')" class="${delBtnClass} transition-colors" title="Çöpe Taşı">
+                            <button type="button" onclick="window.handleSoftDeleteItem('${tx.id}', 'transactions')" class="${delBtnClass} transition-colors" title="Çöpe Taşı">
                                 <i data-lucide="trash-2" class="w-5 h-5"></i>
                             </button>
                         </td>
@@ -881,29 +1090,28 @@
             if (!tbody) return;
 
             const filtered = window.getFilteredKurbans();
+            const selectionActive = window.isSelectionModeActive();
+            const selectedSet = window.getSelectedSet();
 
             if (countSpan) countSpan.textContent = `${filtered.length} kayıt`;
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="${isKbSelectionMode ? '9' : '8'}" class="p-8 text-center text-gray-500">Kriterlere uygun kurban kaydı bulunamadı.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="${selectionActive ? 9 : 8}" class="p-8 text-center text-gray-500">Kriterlere uygun kurban kaydı bulunamadı.</td></tr>`;
                 return;
             }
 
             tbody.innerHTML = filtered.map(k => {
                 const countryStr = k.country || '-';
-                const isSelected = selectedKbs.includes(k.id);
-                const rowSelectClass = isSelected ? 'bg-blue-50' : '';
-                const clickHandler = isKbSelectionMode ? `onclick="window.toggleKbSelection('${k.id}')" style="cursor:pointer;"` : '';
-
-                const checkboxHtml = isKbSelectionMode ? `
-                    <td class="p-4 text-center w-12" onclick="event.stopPropagation(); window.toggleKbSelection('${k.id}')">
-                        <input type="checkbox" onchange="window.toggleKbSelection('${k.id}')" ${isSelected ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer pointer-events-none">
-                    </td>
-                ` : '';
-
+                const checked = selectedSet.has(k.id);
+                
                 return `
-                    <tr class="hover:bg-gray-50 transition-colors ${rowSelectClass}" ${clickHandler}>
-                        ${checkboxHtml}
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        ${selectionActive ? `
+                        <td class="p-4 text-center">
+                            <button type="button" onclick="window.toggleItemSelection('${k.id}')" class="w-5 h-5 rounded border flex items-center justify-center transition-colors ${checked ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-transparent'}">
+                                <i data-lucide="check" class="w-4 h-4"></i>
+                            </button>
+                        </td>` : ''}
                         <td class="p-4 text-sm text-gray-600 whitespace-nowrap">
                             ${window.formatDateTR(k.date)}
                         </td>
@@ -919,7 +1127,7 @@
                             <span class="text-xs text-gray-500">${countryStr}</span>
                         </td>
                         <td class="p-4 text-sm">
-                            <select onclick="event.stopPropagation()" onchange="event.stopPropagation(); window.quickUpdateKurbanStatus('${k.id}', this.value)" class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium outline-none cursor-pointer border ${k.status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : k.status === 'Kesildi' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-green-100 text-green-800 border-green-200'}">
+                            <select onchange="window.quickUpdateKurbanStatus('${k.id}', this.value)" class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium outline-none cursor-pointer border ${k.status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : k.status === 'Kesildi' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-green-100 text-green-800 border-green-200'}">
                                 <option value="Bekliyor" ${k.status === 'Bekliyor' ? 'selected' : ''}>Bekliyor</option>
                                 <option value="Kesildi" ${k.status === 'Kesildi' ? 'selected' : ''}>Kesildi</option>
                                 <option value="Teslim Edildi" ${k.status === 'Teslim Edildi' ? 'selected' : ''}>Teslim Edildi</option>
@@ -931,10 +1139,10 @@
                         </td>
                         <td class="p-4 text-sm text-gray-600">${k.description || '-'}</td>
                         <td class="p-4 text-center space-x-2 whitespace-nowrap">
-                            <button type="button" onclick="event.stopPropagation(); window.startEditKurban('${k.id}')" class="text-gray-400 hover:text-blue-500 transition-colors" title="Düzenle">
+                            <button type="button" onclick="window.startEditKurban('${k.id}')" class="text-gray-400 hover:text-blue-500 transition-colors" title="Düzenle">
                                 <i data-lucide="edit-2" class="w-5 h-5"></i>
                             </button>
-                            <button type="button" onclick="event.stopPropagation(); window.handleSoftDeleteItem('${k.id}', 'kurbans')" class="text-gray-400 hover:text-red-500 transition-colors" title="Sil">
+                            <button type="button" onclick="window.handleSoftDeleteItem('${k.id}', 'kurbans')" class="text-gray-400 hover:text-red-500 transition-colors" title="Sil">
                                 <i data-lucide="trash-2" class="w-5 h-5"></i>
                             </button>
                         </td>
@@ -944,740 +1152,7 @@
             lucide.createIcons();
         };
 
-        // --- Toplu Seçim İşlemleri (İşlemler Menüsü) ---
-        window.toggleTxSelectionMode = () => {
-            isTxSelectionMode = !isTxSelectionMode;
-            selectedTxs = [];
-            window.renderApp();
-        };
-
-        window.toggleTxSelection = (id) => {
-            if(selectedTxs.includes(id)) {
-                selectedTxs = selectedTxs.filter(x => x !== id);
-            } else {
-                selectedTxs.push(id);
-            }
-            window.renderApp();
-        };
-
-        window.selectAllTxs = () => {
-            const filtered = window.getFilteredTransactions(currentTxView);
-            if(selectedTxs.length === filtered.length && filtered.length > 0) {
-                selectedTxs = [];
-            } else {
-                selectedTxs = filtered.map(t => t.id);
-            }
-            window.renderApp();
-        };
-
-        window.deleteSelectedTxs = async () => {
-            if (selectedTxs.length === 0) {
-                window.showToast("Silinecek işlem seçilmedi.");
-                return;
-            }
-            window.confirmAction(`${selectedTxs.length} işlemi çöp kutusuna taşımak istediğinize emin misiniz?`, async () => {
-                if(!currentUser) return;
-                let changes = [];
-                let promises = [];
-                
-                for (let id of selectedTxs) {
-                    const oldItem = transactions.find(t => t.id === id);
-                    if(!oldItem) continue;
-
-                    changes.push({ type: 'UPDATE', collection: 'transactions', id: id, oldData: {...oldItem}, newData: { deleted: true, deletedAt: Date.now() } });
-                    
-                    let linkedId = 'inc_' + id;
-                    let oldLinkedTx = transactions.find(t => t.id === linkedId);
-                    if (oldLinkedTx) changes.push({ type: 'UPDATE', collection: 'transactions', id: linkedId, oldData: {...oldLinkedTx}, newData: { deleted: true, deletedAt: Date.now() } });
-
-                    if (isLocalMode) {
-                        oldItem.deleted = true; oldItem.deletedAt = Date.now();
-                        if(oldLinkedTx) { oldLinkedTx.deleted = true; oldLinkedTx.deletedAt = Date.now(); }
-                    } else {
-                        promises.push(updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', id), { deleted: true, deletedAt: Date.now() }));
-                        if (oldLinkedTx) promises.push(updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', linkedId), { deleted: true, deletedAt: Date.now() }));
-                    }
-                }
-                
-                if (!isLocalMode) {
-                    try { await Promise.all(promises); } catch (e) { window.showToast("Hata: Bazı işlemler silinemedi."); return; }
-                }
-                
-                window.pushAction(changes, `${selectedTxs.length} işlem çöpe taşındı`);
-                selectedTxs = [];
-                isTxSelectionMode = false;
-                window.renderApp();
-                window.showToast("Seçili işlemler çöp kutusuna taşındı.");
-            });
-        };
-
-        // --- Toplu Seçim İşlemleri (Kurban Menüsü) ---
-        window.toggleKbSelectionMode = () => {
-            isKbSelectionMode = !isKbSelectionMode;
-            selectedKbs = [];
-            window.renderApp();
-        };
-
-        window.toggleKbSelection = (id) => {
-            if(selectedKbs.includes(id)) {
-                selectedKbs = selectedKbs.filter(x => x !== id);
-            } else {
-                selectedKbs.push(id);
-            }
-            window.renderApp();
-        };
-
-        window.selectAllKbs = () => {
-            const filtered = window.getFilteredKurbans();
-            if(selectedKbs.length === filtered.length && filtered.length > 0) {
-                selectedKbs = [];
-            } else {
-                selectedKbs = filtered.map(k => k.id);
-            }
-            window.renderApp();
-        };
-
-        window.deleteSelectedKbs = async () => {
-            if (selectedKbs.length === 0) {
-                window.showToast("Silinecek kayıt seçilmedi.");
-                return;
-            }
-            window.confirmAction(`${selectedKbs.length} kaydı çöp kutusuna taşımak istediğinize emin misiniz?`, async () => {
-                if(!currentUser) return;
-                let changes = [];
-                let promises = [];
-                
-                for (let id of selectedKbs) {
-                    const oldItem = kurbans.find(k => k.id === id);
-                    if(!oldItem) continue;
-
-                    changes.push({ type: 'UPDATE', collection: 'kurbans', id: id, oldData: {...oldItem}, newData: { deleted: true, deletedAt: Date.now() } });
-                    
-                    if (isLocalMode) {
-                        oldItem.deleted = true; oldItem.deletedAt = Date.now();
-                    } else {
-                        promises.push(updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'kurbans', id), { deleted: true, deletedAt: Date.now() }));
-                    }
-                }
-                
-                if (!isLocalMode) {
-                    try { await Promise.all(promises); } catch (e) { window.showToast("Hata: Bazı kayıtlar silinemedi."); return; }
-                }
-                
-                window.pushAction(changes, `${selectedKbs.length} kayıt çöpe taşındı`);
-                selectedKbs = [];
-                isKbSelectionMode = false;
-                window.renderApp();
-                window.showToast("Seçili kayıtlar çöp kutusuna taşındı.");
-            });
-        };
-
-        // --- Navigasyon ve Filtreleme Fonksiyonları ---
-        window.setTransactionType = (type) => {
-            if (txType !== type) {
-                txType = type;
-                userEditedDeduction = false; 
-                if (editingTxId) {
-                    editingTxId = null;
-                    window.showToast("Düzenleme iptal edildi.");
-                }
-                window.renderApp();
-            }
-        };
-
-        window.switchTxView = (view) => {
-            currentTxView = view;
-            txType = 'income';
-            window.clearFilters();
-        };
-
-        window.switchCatView = (view) => {
-            currentCatView = view;
-            window.renderApp();
-        };
-
-        window.switchTab = (tab) => {
-            activeTab = tab;
-            const mobileSelect = document.getElementById('mobile-nav-select');
-            if (mobileSelect) mobileSelect.value = tab;
-            txType = 'income';
-            editingTxId = null; 
-            editingKurbanId = null;
-            currentCatView = 'general';
-            isTxSelectionMode = false;
-            selectedTxs = [];
-            isKbSelectionMode = false;
-            selectedKbs = [];
-            window.clearFilters();
-            window.clearKbFilters();
-            window.renderApp();
-        };
-
-        window.handleFilterChange = (field, value) => {
-            if (field === 'type') filterType = value;
-            if (field === 'bank') filterBank = value;
-            if (field === 'category') filterCategory = value;
-            if (field === 'country') filterCountry = value;
-            if (field === 'startDate') filterStartDate = value;
-            if (field === 'endDate') filterEndDate = value;
-            if (field === 'search') filterSearch = value;
-            window.updateFilteredView();
-        };
-
-        window.clearFilters = () => {
-            filterType = '';
-            filterBank = '';
-            filterCategory = '';
-            filterCountry = '';
-            filterStartDate = '';
-            filterEndDate = '';
-            filterSearch = '';
-            sortColumn = 'date';
-            sortOrder = 'desc';
-            window.renderApp();
-        };
-
-        window.sortBy = (column) => {
-            if (sortColumn === column) {
-                sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
-            } else {
-                sortColumn = column;
-                sortOrder = (column === 'date' || column === 'amount' || column === 'entry') ? 'desc' : 'asc';
-            }
-            window.renderApp();
-        };
-
-        window.renderSortIcon = (column) => {
-            if (sortColumn !== column) return `<i data-lucide="chevrons-up-down" class="w-4 h-4 text-gray-400 opacity-50 group-hover:opacity-100 transition-opacity"></i>`;
-            return sortOrder === 'asc' 
-                ? `<i data-lucide="chevron-up" class="w-4 h-4 text-blue-600"></i>` 
-                : `<i data-lucide="chevron-down" class="w-4 h-4 text-blue-600"></i>`;
-        };
-
-        window.handleKbFilterChange = (field, value) => {
-            if (field === 'search') filterKbSearch = value;
-            if (field === 'type') filterKbType = value;
-            if (field === 'status') filterKbStatus = value;
-            if (field === 'country') filterKbCountry = value;
-            if (field === 'startDate') filterKbStartDate = value;
-            if (field === 'endDate') filterKbEndDate = value;
-            window.updateKbFilteredView();
-        };
-
-        window.clearKbFilters = () => {
-            filterKbSearch = '';
-            filterKbType = '';
-            filterKbStatus = '';
-            filterKbCountry = '';
-            filterKbStartDate = '';
-            filterKbEndDate = '';
-            sortKbColumn = 'date';
-            sortKbOrder = 'desc';
-            window.renderApp();
-        };
-
-        window.sortKbBy = (column) => {
-            if (sortKbColumn === column) {
-                sortKbOrder = sortKbOrder === 'asc' ? 'desc' : 'asc';
-            } else {
-                sortKbColumn = column;
-                sortKbOrder = column === 'date' ? 'desc' : 'asc';
-            }
-            window.renderApp();
-        };
-
-        window.renderKbSortIcon = (column) => {
-            if (sortKbColumn !== column) return `<i data-lucide="chevrons-up-down" class="w-4 h-4 text-gray-400 opacity-50 group-hover:opacity-100 transition-opacity"></i>`;
-            return sortKbOrder === 'asc' 
-                ? `<i data-lucide="chevron-up" class="w-4 h-4 text-blue-600"></i>` 
-                : `<i data-lucide="chevron-down" class="w-4 h-4 text-blue-600"></i>`;
-        };
-
-        window.handleKbTypeChange = (val) => {
-            const selectEl = document.getElementById('kbType');
-            const otherEl = document.getElementById('kbTypeOther');
-            if (!selectEl || !otherEl) return;
-            if (val === 'Diğer') {
-                selectEl.classList.remove('w-full');
-                selectEl.classList.add('w-1/2');
-                otherEl.classList.remove('hidden', 'w-0');
-                otherEl.classList.add('w-1/2', 'ml-2', 'block');
-                otherEl.required = true;
-            } else {
-                selectEl.classList.add('w-full');
-                selectEl.classList.remove('w-1/2');
-                otherEl.classList.add('hidden', 'w-0');
-                otherEl.classList.remove('w-1/2', 'ml-2', 'block');
-                otherEl.required = false;
-                otherEl.value = '';
-            }
-        };
-
-        // --- İçe Aktarım Modal ve Excel Fonksiyonları ---
-        window.updateImportDeduction = (index, value) => {
-            let val = parseFloat(value);
-            if (isNaN(val) || val < 0) val = 0;
-            if (window.pendingImports[index] && val > window.pendingImports[index].miktar) {
-                val = window.pendingImports[index].miktar;
-            }
-            if (window.pendingImports[index]) {
-                window.pendingImports[index].deduction = val;
-            }
-        };
-
-        window.closeImportModal = () => {
-            window.pendingImports = [];
-            window.showImportModal = false;
-            const input = document.getElementById('importExcelInput');
-            if (input) input.value = '';
-            window.renderImportModal();
-        };
-
-        window.confirmImport = async () => {
-            if (!currentUser && !isLocalMode) return;
-            const btn = document.querySelector('#import-modal button.bg-blue-600');
-            if (btn) { btn.disabled = true; btn.innerHTML = 'İşleniyor...'; }
-
-            let importedCount = 0;
-            const promises = [];
-            const now = Date.now();
-            let changes = [];
-
-            let localCats = [...categories];
-            let localBanks = [...banks];
-
-            for (const item of window.pendingImports) {
-                // Banka kontrol
-                let bank = localBanks.find(b => b.name?.toLowerCase() === item.bankaAdi.toLowerCase());
-                if (!bank) {
-                    const newBankId = 'b_' + now + Math.random().toString(36).substr(2, 9);
-                    bank = { id: newBankId, name: item.bankaAdi, initialBalance: 0 };
-                    localBanks.push(bank);
-                    changes.push({ type: 'ADD', collection: 'banks', id: newBankId, data: bank });
-                    if (!isLocalMode) promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'banks', newBankId), { name: bank.name, initialBalance: bank.initialBalance }));
-                }
-
-                // Kategori kontrol
-                let categoryId = null;
-                if (item.kategoriAdi && item.kategoriAdi !== '-') {
-                    let targetDomain = item.viewDomain;
-                    if (item.viewDomain === 'dernek') {
-                        targetDomain = item.tip === 'income' ? 'dernek_gelir' : 'dernek_gider';
-                    }
-                    let category = localCats.find(c => c.name?.toLowerCase() === item.kategoriAdi.toLowerCase() && (c.domain || 'general') === targetDomain);
-                    if (!category) {
-                        const newCatId = 'c_' + now + Math.random().toString(36).substr(2, 9);
-                        category = { id: newCatId, name: item.kategoriAdi, domain: targetDomain };
-                        localCats.push(category);
-                        changes.push({ type: 'ADD', collection: 'categories', id: newCatId, data: category });
-                        if (!isLocalMode) promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', newCatId), { name: category.name, domain: targetDomain }));
-                    }
-                    categoryId = category.id;
-                }
-
-                // Ülke kontrol
-                let countryId = null;
-                if (item.ulkeAdi && item.ulkeAdi !== '-') {
-                    let countryObj = localCats.find(c => c.name?.toLowerCase() === item.ulkeAdi.toLowerCase() && c.domain === 'country');
-                    if (!countryObj) {
-                        const newCatId = 'c_' + now + Math.random().toString(36).substr(2, 9) + 'ctry';
-                        countryObj = { id: newCatId, name: item.ulkeAdi, domain: 'country' };
-                        localCats.push(countryObj);
-                        changes.push({ type: 'ADD', collection: 'categories', id: newCatId, data: countryObj });
-                        if (!isLocalMode) promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', newCatId), { name: countryObj.name, domain: 'country' }));
-                    }
-                    countryId = countryObj.id;
-                }
-
-                const txId = 't_' + now + Math.random().toString(36).substr(2, 9) + importedCount;
-                const newTx = {
-                    type: item.tip,
-                    bankId: bank.id,
-                    categoryId: categoryId,
-                    countryId: countryId,
-                    amount: item.miktar,
-                    description: item.aciklama,
-                    date: item.tarih,
-                    domain: item.viewDomain,
-                    createdAt: now + importedCount,
-                    deleted: false
-                };
-
-                changes.push({ type: 'ADD', collection: 'transactions', id: txId, data: newTx });
-                if (isLocalMode) {
-                    transactions.unshift({ id: txId, ...newTx });
-                } else {
-                    promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', txId), newTx));
-                }
-
-                // Kesinti kontrolü (Dernek Geliri)
-                if (item.deduction > 0) {
-                    let sourceCategoryName = 'Bağış';
-                    let sourceCat = localCats.find(c => c.id === categoryId);
-                    if (sourceCat && sourceCat.name) sourceCategoryName = sourceCat.name;
-                    let generatedCatName = `${sourceCategoryName} Kesintisi`;
-
-                    let expenseCatId = null;
-                    let expenseCat = localCats.find(c => c.name?.toLowerCase() === generatedCatName.toLowerCase() && c.domain === 'dernek_gelir');
-                    if (!expenseCat) {
-                        expenseCatId = 'c_' + now + Math.random().toString(36).substr(2, 5) + 'ded';
-                        expenseCat = { id: expenseCatId, name: generatedCatName, domain: 'dernek_gelir' };
-                        localCats.push(expenseCat);
-                        changes.push({ type: 'ADD', collection: 'categories', id: expenseCatId, data: expenseCat });
-                        if (!isLocalMode) promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', expenseCatId), { name: generatedCatName, domain: 'dernek_gelir' }));
-                    } else {
-                        expenseCatId = expenseCat.id;
-                    }
-
-                    const deductionTxId = 'inc_' + txId;
-                    const deductionTx = {
-                        type: 'income',
-                        bankId: bank.id,
-                        categoryId: expenseCatId,
-                        countryId: countryId,
-                        amount: item.deduction,
-                        description: 'Dernek Kesintisi (Toplu Aktarım)',
-                        date: item.tarih,
-                        domain: 'dernek',
-                        createdAt: now + importedCount + 1,
-                        deleted: false
-                    };
-
-                    changes.push({ type: 'ADD', collection: 'transactions', id: deductionTxId, data: deductionTx });
-                    if (isLocalMode) {
-                        transactions.unshift({ id: deductionTxId, ...deductionTx });
-                    } else {
-                        promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', deductionTxId), deductionTx));
-                    }
-                }
-
-                importedCount++;
-            }
-
-            if (isLocalMode) {
-                banks = localBanks;
-                categories = localCats;
-                window.pushAction(changes, `${importedCount} İşlem İçe Aktarıldı`);
-                window.closeImportModal();
-                window.renderApp();
-                window.showToast(`${importedCount} işlem başarıyla eklendi.`);
-                return;
-            }
-
-            try {
-                await Promise.all(promises);
-                window.pushAction(changes, `${importedCount} İşlem İçe Aktarıldı`);
-                window.closeImportModal();
-                window.showToast(`${importedCount} işlem başarıyla eklendi.`);
-            } catch (error) {
-                window.showToast("Toplu içe aktarımda hata oluştu.");
-                if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="check" class="w-5 h-5"></i> İçeri Aktar ve Kaydet'; lucide.createIcons(); }
-            }
-        };
-
-        window.renderImportModal = () => {
-            const modal = document.getElementById('import-modal');
-            if (!window.showImportModal) {
-                modal.classList.add('hidden');
-                return;
-            }
-
-            const rowsHtml = window.pendingImports.map((item, index) => {
-                const isExpense = item.tip === 'expense' && item.viewDomain === 'general';
-                const tipBadge = item.tip === 'income' 
-                    ? '<span class="text-green-600 font-medium">Girdi</span>' 
-                    : '<span class="text-red-600 font-medium">Çıktı</span>';
-
-                const dedInput = isExpense 
-                    ? `<input type="number" step="0.01" min="0" max="${item.miktar}" value="${item.deduction}" oninput="window.updateImportDeduction(${index}, this.value)" class="w-24 p-1.5 border border-gray-300 rounded text-sm text-center outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50 text-blue-900 font-bold shadow-inner">`
-                    : `<span class="text-gray-400">-</span>`;
-
-                return `
-                    <tr class="border-b border-gray-100 hover:bg-gray-50">
-                        <td class="p-3 text-sm text-gray-600">${window.formatDateTR(item.tarih)}</td>
-                        <td class="p-3 text-sm">${tipBadge}</td>
-                        <td class="p-3 text-sm font-medium text-gray-800">${item.bankaAdi}</td>
-                        <td class="p-3 text-sm text-gray-600">${item.kategoriAdi || '-'}</td>
-                        <td class="p-3 text-sm text-gray-600">${item.ulkeAdi || '-'}</td>
-                        <td class="p-3 text-sm text-gray-600 truncate max-w-[150px]" title="${item.aciklama}">${item.aciklama || '-'}</td>
-                        <td class="p-3 text-sm font-semibold ${item.tip === 'income' ? 'text-green-600' : 'text-red-600'} text-right">${window.formatMoney(item.miktar)}</td>
-                        <td class="p-3 text-sm text-center">${dedInput}</td>
-                    </tr>
-                `;
-            }).join('');
-
-            modal.innerHTML = `
-                <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-6xl max-h-[90vh] flex flex-col animate-[fadeIn_0.2s_ease-out]">
-                    <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl">
-                        <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                            <i data-lucide="list-checks" class="text-blue-600 w-6 h-6"></i>
-                            İçe Aktarımı Onayla ve Kesintileri Ayarla
-                        </h2>
-                        <button onclick="window.closeImportModal()" class="text-gray-400 hover:text-red-500 transition-colors p-1 bg-white rounded-lg border border-gray-200">
-                            <i data-lucide="x" class="w-5 h-5"></i>
-                        </button>
-                    </div>
-                    <div class="p-0 overflow-y-auto flex-1">
-                        <table class="w-full text-left border-collapse">
-                            <thead class="sticky top-0 bg-white shadow-sm ring-1 ring-gray-100 z-10">
-                                <tr class="text-sm text-gray-500 bg-gray-50">
-                                    <th class="p-3 font-medium">Tarih</th>
-                                    <th class="p-3 font-medium">Tip</th>
-                                    <th class="p-3 font-medium">Banka</th>
-                                    <th class="p-3 font-medium">Kategori</th>
-                                    <th class="p-3 font-medium">Ülke</th>
-                                    <th class="p-3 font-medium">Açıklama</th>
-                                    <th class="p-3 font-medium text-right">Miktar</th>
-                                    <th class="p-3 font-medium text-center text-blue-800 bg-blue-100/50">Dernek Kesintisi (TL)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${rowsHtml}
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="p-5 border-t border-gray-100 flex justify-between items-center bg-gray-50 rounded-b-2xl">
-                        <span class="text-sm text-gray-500 font-medium">Toplam ${window.pendingImports.length} kayıt aktarılacak.</span>
-                        <div class="flex gap-3">
-                            <button onclick="window.closeImportModal()" class="px-5 py-2.5 text-gray-600 font-medium rounded-lg border border-gray-300 bg-white hover:bg-gray-100 transition-colors">İptal</button>
-                            <button onclick="window.confirmImport()" class="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-2">
-                                <i data-lucide="check" class="w-5 h-5"></i> İçeri Aktar ve Kaydet
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-            lucide.createIcons();
-            modal.classList.remove('hidden');
-        };
-
-        window.exportToExcel = () => {
-            if (activeTab === 'kurban') {
-                const data = window.getFilteredKurbans().map(k => {
-                    return {
-                        "Tarih": window.formatDateTR(k.date),
-                        "Adı Soyadı": k.name || '-',
-                        "TC Numarası": k.tc || '-',
-                        "Telefon": k.phone || '-',
-                        "Ülke": k.country || '-',
-                        "Cinsi": k.kType || '-',
-                        "Durum": k.status || '-',
-                        "Referans": k.ref || '-',
-                        "Makbuz No": k.receipt || '-',
-                        "Açıklama": k.description || '-'
-                    };
-                });
-
-                if(data.length === 0) { window.showToast("Dışa aktarılacak veri bulunamadı."); return; }
-                const worksheet = XLSX.utils.json_to_sheet(data);
-                const workbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(workbook, worksheet, "Kurbanlar");
-                XLSX.writeFile(workbook, `Nigde_IHH_Kurban_Kayitlari.xlsx`);
-                return;
-            }
-
-            const viewDomain = currentTxView;
-            const data = window.getFilteredTransactions(viewDomain).map(tx => {
-                const bank = banks.find(b => b.id === tx.bankId);
-                const category = categories.find(c => c.id === tx.categoryId);
-                const country = categories.find(c => c.id === tx.countryId);
-                
-                const rowData = {
-                    "Tarih": window.formatDateTR(tx.date),
-                    "Tip": tx.type === 'income' ? 'Girdi' : 'Çıktı',
-                    "Banka Adı": bank ? bank.name : 'Silinmiş Banka',
-                    "Kategori": category ? category.name : '-',
-                    "Ülke": country ? country.name : '-',
-                    "Açıklama": tx.description || '-',
-                    "Miktar": parseFloat(tx.amount)
-                };
-
-                return rowData;
-            });
-
-            if(data.length === 0) {
-                window.showToast("Dışa aktarılacak veri bulunamadı.");
-                return;
-            }
-
-            const worksheet = XLSX.utils.json_to_sheet(data);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "İşlemler");
-            XLSX.writeFile(workbook, `Nigde_IHH_${viewDomain === 'dernek' ? 'Dernek' : 'Bagis'}_Islemler.xlsx`);
-        };
-
-        window.triggerImport = () => {
-            document.getElementById('importExcelInput').click();
-        };
-
-        window.importFromExcel = async (event) => {
-            const file = event.target.files[0];
-            if (!file || !currentUser) return;
-
-            window.showToast("Veriler okunuyor, lütfen bekleyin...");
-            const viewDomain = currentTxView;
-
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, {type: 'array'});
-                    const firstSheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[firstSheetName];
-                    const json = XLSX.utils.sheet_to_json(worksheet);
-
-                    let parsedData = [];
-                    for (const row of json) {
-                        const rawTarih = row["Tarih"] || row["tarih"];
-                        const tarih = window.parseImportDate(rawTarih);
-                        const tipRaw = String(row["Tip"] || row["tip"] || "").toLocaleLowerCase('tr-TR');
-                        const tip = (tipRaw.includes("çıktı") || tipRaw.includes("cikti") || tipRaw.includes("gider") || tipRaw.includes("çıkış") || tipRaw.includes("cikis")) ? "expense" : "income";
-                        
-                        const bankaAdi = String(row["Banka Adı"] || row["Banka"] || row["banka"] || "Bilinmeyen Banka").trim();
-                        const kategoriAdi = String(row["Kategori"] || row["kategori"] || "").trim();
-                        const aciklama = String(row["Açıklama"] || row["açıklama"] || row["Aciklama"] || "").trim();
-                        const miktar = parseFloat(row["Miktar"] || row["miktar"] || 0);
-
-                        const rawUlke = row["Ülke"] || row["ülke"] || row["Ulke"] || row["ulke"];
-                        const ulkeAdi = rawUlke ? String(rawUlke).trim() : '';
-
-                        if (isNaN(miktar) || miktar <= 0) continue;
-
-                        let deduction = 0;
-                        if (viewDomain === 'general' && tip === 'expense') {
-                            deduction = parseFloat((miktar * (expenseRate / 100)).toFixed(2));
-                            if (isNaN(deduction)) deduction = 0;
-                        }
-
-                        parsedData.push({
-                            id: 'temp_' + Math.random().toString(36).substr(2, 9),
-                            tarih, tip, bankaAdi, kategoriAdi, aciklama, miktar, ulkeAdi,
-                            deduction,
-                            viewDomain
-                        });
-                    }
-
-                    if(parsedData.length === 0) {
-                        window.showToast("İçe aktarılacak geçerli veri bulunamadı.");
-                        document.getElementById('importExcelInput').value = '';
-                        return;
-                    }
-
-                    window.pendingImports = parsedData;
-                    window.showImportModal = true;
-                    window.renderImportModal();
-
-                } catch (error) {
-                    window.showToast("Dosya okunurken bir hata oluştu.");
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        };
-
-        window.triggerKurbanImport = () => {
-            document.getElementById('importKurbanExcelInput').click();
-        };
-
-        window.importKurbanFromExcel = async (event) => {
-            const file = event.target.files[0];
-            if (!file || (!currentUser && !isLocalMode)) return;
-
-            window.showToast("Kurban verileri yükleniyor...");
-
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, {type: 'array'});
-                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-                    const json = XLSX.utils.sheet_to_json(worksheet);
-
-                    let importedCount = 0;
-                    const promises = [];
-                    const now = Date.now();
-                    const changes = [];
-
-                    for (const row of json) {
-                        const rawName = row["Adı Soyadı"] || row["Ad"] || row["İsim"] || "";
-                        if (!rawName) continue;
-
-                        const rawTarih = row["Tarih"] || row["tarih"];
-                        const tarih = window.parseImportDate(rawTarih);
-                        const tc = (row["TC Numarası"] || row["TC"] || row["tc"] || "").toString().trim();
-                        const phone = (row["Telefon"] || row["telefon"] || row["Tel"] || "").toString().trim();
-                        const kType = (row["Cinsi"] || row["Kurbanın Cinsi"] || row["cinsi"] || "Diğer").toString().trim();
-                        const rawStatus = (row["Durum"] || row["durum"] || "Bekliyor").toString().trim();
-                        
-                        let status = "Bekliyor";
-                        if(rawStatus.toLowerCase().includes("kesil")) status = "Kesildi";
-                        if(rawStatus.toLowerCase().includes("teslim")) status = "Teslim Edildi";
-
-                        const ref = (row["Referans"] || row["referans"] || "").toString().trim();
-                        const receipt = (row["Makbuz No"] || row["Makbuz"] || "").toString().trim();
-                        const desc = (row["Açıklama"] || row["Not"] || "").toString().trim();
-
-                        const rawUlke = row["Ülke"] || row["ülke"] || row["Ulke"] || row["ulke"];
-                        const ulkeAdi = rawUlke ? rawUlke.toString().trim() : '';
-
-                        const kbId = 'k_' + now + Math.random().toString(36).substr(2, 9);
-                        const newKb = {
-                            name: String(rawName).trim(),
-                            tc: tc,
-                            phone: phone,
-                            kType: kType,
-                            status: status,
-                            ref: ref,
-                            receipt: receipt,
-                            description: desc,
-                            date: tarih,
-                            country: ulkeAdi,
-                            deleted: false,
-                            createdAt: now + importedCount
-                        };
-
-                        changes.push({ type: 'ADD', collection: 'kurbans', id: kbId, data: newKb });
-
-                        if (isLocalMode) {
-                            kurbans.unshift({ id: kbId, ...newKb });
-                        } else {
-                            promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'kurbans', kbId), newKb));
-                        }
-                        importedCount++;
-                    }
-
-                    if (!isLocalMode) {
-                        await Promise.all(promises);
-                    }
-                    
-                    window.pushAction(changes, `${importedCount} Kurban Kaydı İçe Aktarıldı`);
-                    window.renderApp();
-                    window.showToast(`${importedCount} kurban kaydı başarıyla eklendi.`);
-                    document.getElementById('importKurbanExcelInput').value = ''; 
-                } catch (error) {
-                    console.error(error);
-                    window.showToast("Dosya okunurken bir hata oluştu.");
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        };
-
-        // --- Ortak Veri Tabanı (CRUD) İşlemleri ---
-        window.handleSaveSettings = async (e) => {
-            e.preventDefault();
-            if (!currentUser) return;
-            const rate = parseFloat(document.getElementById('settingExpenseRate').value) || 0;
-            if (isLocalMode) {
-                expenseRate = rate;
-                window.showToast("Ayarlar yerel olarak kaydedildi.");
-                window.renderApp();
-                return;
-            }
-            try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { expenseRate: rate });
-                window.showToast("Ayarlar başarıyla kaydedildi.");
-            } catch (err) { window.showToast("Ayarlar kaydedilemedi."); }
-        };
-
+        // --- Ortak Kayıt Silme ve Geri Yükleme ---
         window.handleSoftDeleteItem = async (id, collectionName) => {
             window.confirmAction('Bu kaydı çöp kutusuna taşımak istediğinize emin misiniz?', async () => {
                 if(!currentUser) return;
@@ -1784,6 +1259,1274 @@
                     window.showToast("Kayıt kalıcı olarak silindi.");
                 } catch (e) { window.showToast("Hata: Kayıt silinemedi."); }
             });
+        };
+
+        // --- Finans Kayıt Ekleme ve Düzenleme (CRUD) ---
+        window.startEditTransaction = (id) => {
+            const tx = transactions.find(t => t.id === id);
+            if (!tx) return;
+            txType = tx.type;
+            editingTxId = id;
+            userEditedDeduction = true; 
+            currentTxView = tx.domain === 'dernek' ? 'dernek' : 'general';
+            if (activeTab !== 'transactions') activeTab = 'transactions';
+            window.renderApp();
+            setTimeout(() => {
+                document.getElementById('txBankId').value = tx.bankId || '';
+                document.getElementById('txCategoryId').value = tx.categoryId || '';
+                document.getElementById('txAmount').value = tx.amount || '';
+                
+                const countryNameEl = document.getElementById('txCountryName');
+                if (countryNameEl) {
+                    if (tx.countryId) {
+                        const c = categories.find(cat => cat.id === tx.countryId);
+                        countryNameEl.value = c ? c.name : '';
+                    } else {
+                        countryNameEl.value = '';
+                    }
+                }
+
+                let safeDate = tx.date;
+                if (!safeDate) {
+                    safeDate = new Date().toISOString().split('T')[0];
+                } else if (safeDate.includes('.')) {
+                    const p = safeDate.split('.');
+                    if (p.length === 3) safeDate = `${p[2]}-${p[1]}-${p[0]}`;
+                }
+                document.getElementById('txDate').value = safeDate;
+                
+                document.getElementById('txDescription').value = tx.description || '';
+                
+                if (tx.type === 'expense' && tx.domain === 'general') {
+                    const linkedInc = transactions.find(t => t.id === 'inc_' + id && !t.deleted);
+                    const dedEl = document.getElementById('txDeduction');
+                    if (linkedInc && dedEl) {
+                        dedEl.value = linkedInc.amount || '';
+                        window.updateRemainingExpense();
+                    } else if (dedEl) {
+                        dedEl.value = '';
+                        window.updateRemainingExpense();
+                    }
+                }
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                window.showToast("Düzenleme modu aktif.");
+            }, 50);
+        };
+
+        window.cancelEditTransaction = () => {
+            editingTxId = null;
+            userEditedDeduction = false;
+            window.renderApp();
+            window.showToast("Düzenleme iptal edildi.");
+        };
+
+        window.handleAddTransaction = async (e) => {
+            e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalBtnHtml = submitBtn ? submitBtn.innerHTML : '';
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = 'İşleniyor...'; }
+
+            const bankId = document.getElementById('txBankId').value;
+            const categoryId = document.getElementById('txCategoryId').value;
+            const amountEl = document.getElementById('txAmount');
+            const description = document.getElementById('txDescription').value;
+            const date = document.getElementById('txDate').value;
+
+            const amount = parseFloat(amountEl.value);
+            const viewDomain = currentTxView;
+
+            if (!bankId || !amount || !categoryId) {
+                window.showToast("Lütfen zorunlu alanları doldurun.");
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = originalBtnHtml; }
+                return;
+            }
+            if(!currentUser) {
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = originalBtnHtml; }
+                return;
+            }
+
+            const now = Date.now();
+            const isEditing = !!editingTxId;
+            const mainTxId = isEditing ? editingTxId : now.toString() + Math.random().toString(36).substr(2, 5);
+            let actionChanges = [];
+
+            let isNewCountryCategory = false;
+            let finalCountryId = null;
+            const countryNameEl = document.getElementById('txCountryName');
+            const countryName = countryNameEl ? countryNameEl.value.trim() : '';
+
+            if (countryName) {
+                let existingCountry = categories.find(c => c.name?.toLowerCase() === countryName.toLowerCase() && c.domain === 'country');
+                if (existingCountry) {
+                    finalCountryId = existingCountry.id;
+                } else {
+                    finalCountryId = 'c_' + Date.now().toString() + Math.random().toString(36).substr(2, 5) + 'ctry';
+                    isNewCountryCategory = true;
+                }
+            }
+
+            if (isNewCountryCategory) {
+                actionChanges.push({ type: 'ADD', collection: 'categories', id: finalCountryId, data: { name: countryName, domain: 'country' }});
+            }
+
+            if (txType === 'expense' && viewDomain === 'general') {
+                const deductionEl = document.getElementById('txDeduction');
+                let deduction = 0;
+
+                if (deductionEl && deductionEl.value !== '') {
+                    deduction = parseFloat(deductionEl.value);
+                } else if (!userEditedDeduction && expenseRate > 0) {
+                    deduction = parseFloat((amount * (expenseRate / 100)).toFixed(2));
+                }
+                if (isNaN(deduction)) deduction = 0;
+                const remaining = amount - deduction;
+
+                if (remaining < 0) {
+                    window.showToast("Kesinti miktarı, toplam girdiğiniz miktardan büyük olamaz.");
+                    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = originalBtnHtml; }
+                    return;
+                }
+
+                const mainTx = {
+                    type: 'expense',
+                    bankId: bankId,
+                    categoryId: categoryId,
+                    countryId: finalCountryId,
+                    amount: amount, 
+                    description: description,
+                    date: date,
+                    domain: 'general',
+                    deleted: false
+                };
+                if (!isEditing) mainTx.createdAt = now;
+
+                let deductionTx = null;
+                let expenseCatId = null;
+                let generatedCatName = '';
+                let isNewCategory = false; 
+
+                if (deduction > 0) {
+                    let sourceCategoryName = 'Bağış';
+                    let sourceCat = categories.find(c => c.id === categoryId);
+                    if (sourceCat && sourceCat.name) sourceCategoryName = sourceCat.name;
+                    generatedCatName = `${sourceCategoryName} Kesintisi`;
+
+                    let expenseCat = categories.find(c => c.name?.toLowerCase() === generatedCatName.toLowerCase() && c.domain === 'dernek_gelir');
+                    if (!expenseCat) {
+                        expenseCatId = 'c_' + Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                        isNewCategory = true;
+                    } else {
+                        expenseCatId = expenseCat.id;
+                    }
+
+                    deductionTx = {
+                        type: 'income',
+                        bankId: bankId,
+                        categoryId: expenseCatId,
+                        countryId: finalCountryId,
+                        amount: deduction,
+                        description: 'Dernek Kesintisi',
+                        date: date,
+                        domain: 'dernek',
+                        deleted: false
+                    };
+                    if (!isEditing) deductionTx.createdAt = now + 1;
+                }
+
+                if (isEditing) {
+                    const oldMainTx = transactions.find(t => t.id === mainTxId);
+                    actionChanges.push({ type: 'UPDATE', collection: 'transactions', id: mainTxId, oldData: {...oldMainTx}, newData: mainTx });
+                    
+                    const deductionTxId = 'inc_' + mainTxId;
+                    const oldDeductionTx = transactions.find(t => t.id === deductionTxId);
+                    
+                    if (deductionTx) {
+                        if (isNewCategory) {
+                            actionChanges.push({ type: 'ADD', collection: 'categories', id: expenseCatId, data: { name: generatedCatName, domain: 'dernek_gelir' }});
+                        }
+                        if (oldDeductionTx) {
+                            actionChanges.push({ type: 'UPDATE', collection: 'transactions', id: deductionTxId, oldData: {...oldDeductionTx}, newData: deductionTx });
+                        } else {
+                            actionChanges.push({ type: 'ADD', collection: 'transactions', id: deductionTxId, data: deductionTx });
+                        }
+                    } else if (oldDeductionTx && !oldDeductionTx.deleted) {
+                        actionChanges.push({ type: 'UPDATE', collection: 'transactions', id: deductionTxId, oldData: {...oldDeductionTx}, newData: { deleted: true } });
+                    }
+                } else {
+                    actionChanges.push({ type: 'ADD', collection: 'transactions', id: mainTxId, data: mainTx });
+                    if (deductionTx) {
+                        if (isNewCategory) {
+                            actionChanges.push({ type: 'ADD', collection: 'categories', id: expenseCatId, data: { name: generatedCatName, domain: 'dernek_gelir' }});
+                        }
+                        actionChanges.push({ type: 'ADD', collection: 'transactions', id: 'inc_' + mainTxId, data: deductionTx });
+                    }
+                }
+
+                if (isLocalMode) {
+                    if (isNewCountryCategory) categories.push({ id: finalCountryId, name: countryName, domain: 'country' });
+                    
+                    if (isEditing) {
+                        const idx = transactions.findIndex(t => t.id === mainTxId);
+                        if (idx > -1) Object.assign(transactions[idx], mainTx);
+                        const incIdx = transactions.findIndex(t => t.id === 'inc_' + mainTxId);
+                        if (deductionTx) {
+                            if (isNewCategory) categories.push({ id: expenseCatId, name: generatedCatName, domain: 'dernek_gelir' });
+                            if (incIdx > -1) Object.assign(transactions[incIdx], deductionTx);
+                            else transactions.unshift({ id: 'inc_' + mainTxId, ...deductionTx });
+                        } else if (incIdx > -1) {
+                            transactions[incIdx].deleted = true; 
+                        }
+                    } else {
+                        transactions.unshift({ id: mainTxId, ...mainTx });
+                        if (deductionTx) {
+                            if (isNewCategory) categories.push({ id: expenseCatId, name: generatedCatName, domain: 'dernek_gelir' });
+                            transactions.unshift({ id: 'inc_' + mainTxId, ...deductionTx });
+                        }
+                    }
+                    
+                    amountEl.value = '';
+                    if (deductionEl) deductionEl.value = '';
+                    document.getElementById('txDescription').value = '';
+                    if (countryNameEl) countryNameEl.value = '';
+                    userEditedDeduction = false;
+                    editingTxId = null;
+                    window.pushAction(actionChanges, isEditing ? "İşlem Güncellendi" : "İşlem Eklendi");
+                    window.renderApp();
+                    window.showToast(isEditing ? "İşlem başarıyla güncellendi." : "İşlem yerel belleğe kaydedildi.");
+                    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = originalBtnHtml; }
+                    return;
+                }
+
+                try {
+                    if (isNewCountryCategory) {
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', finalCountryId), { name: countryName, domain: 'country' });
+                    }
+                    
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'transactions', mainTxId);
+                    if (isEditing) await updateDoc(docRef, mainTx);
+                    else await setDoc(docRef, mainTx);
+
+                    if (deductionTx) {
+                        if (isNewCategory) {
+                            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', expenseCatId), { name: generatedCatName, domain: 'dernek_gelir' });
+                        }
+                        const deductionTxId = 'inc_' + mainTxId;
+                        const incRef = doc(db, 'artifacts', appId, 'public', 'data', 'transactions', deductionTxId);
+                        
+                        const linkedTxExists = transactions.find(t => t.id === deductionTxId);
+                        if (isEditing && linkedTxExists) await updateDoc(incRef, deductionTx);
+                        else await setDoc(incRef, deductionTx);
+                    } else if (isEditing) {
+                        const linkedTxExists = transactions.find(t => t.id === 'inc_' + mainTxId);
+                        if (linkedTxExists) {
+                            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', 'inc_' + mainTxId), { deleted: true });
+                        }
+                    }
+
+                    amountEl.value = '';
+                    if (deductionEl) deductionEl.value = '';
+                    document.getElementById('txDescription').value = '';
+                    if (countryNameEl) countryNameEl.value = '';
+                    userEditedDeduction = false;
+                    editingTxId = null;
+                    window.pushAction(actionChanges, isEditing ? "İşlem Güncellendi" : "İşlem Eklendi");
+                    window.showToast(isEditing ? "İşlem başarıyla güncellendi." : "İşlem başarıyla kaydedildi.");
+                } catch (err) {
+                    window.showToast("Hata: İşlem gerçekleştirilemedi.");
+                } finally {
+                    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = originalBtnHtml; }
+                }
+
+            } else {
+                const mainTx = {
+                    type: txType,
+                    bankId: bankId,
+                    categoryId: categoryId,
+                    countryId: finalCountryId,
+                    amount: amount,
+                    description: description,
+                    date: date,
+                    domain: viewDomain,
+                    deleted: false
+                };
+                if (!isEditing) mainTx.createdAt = now;
+
+                if (isEditing) {
+                    const oldMainTx = transactions.find(t => t.id === mainTxId);
+                    actionChanges.push({ type: 'UPDATE', collection: 'transactions', id: mainTxId, oldData: {...oldMainTx}, newData: mainTx });
+                } else {
+                    actionChanges.push({ type: 'ADD', collection: 'transactions', id: mainTxId, data: mainTx });
+                }
+
+                if (isLocalMode) {
+                    if (isNewCountryCategory) categories.push({ id: finalCountryId, name: countryName, domain: 'country' });
+                    
+                    if (isEditing) {
+                        const idx = transactions.findIndex(t => t.id === mainTxId);
+                        if (idx > -1) Object.assign(transactions[idx], mainTx);
+                    } else {
+                        transactions.unshift({ id: mainTxId, ...mainTx });
+                    }
+                    amountEl.value = '';
+                    document.getElementById('txDescription').value = '';
+                    if (countryNameEl) countryNameEl.value = '';
+                    editingTxId = null;
+                    window.pushAction(actionChanges, isEditing ? "İşlem Güncellendi" : "İşlem Eklendi");
+                    window.renderApp();
+                    window.showToast(isEditing ? "İşlem başarıyla güncellendi." : "İşlem yerel belleğe kaydedildi.");
+                    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = originalBtnHtml; }
+                    return;
+                }
+
+                try {
+                    if (isNewCountryCategory) {
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', finalCountryId), { name: countryName, domain: 'country' });
+                    }
+                    
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'transactions', mainTxId);
+                    if (isEditing) await updateDoc(docRef, mainTx);
+                    else await setDoc(docRef, mainTx);
+                    
+                    amountEl.value = '';
+                    document.getElementById('txDescription').value = '';
+                    if (countryNameEl) countryNameEl.value = '';
+                    editingTxId = null;
+                    window.pushAction(actionChanges, isEditing ? "İşlem Güncellendi" : "İşlem Eklendi");
+                    window.showToast(isEditing ? "İşlem başarıyla güncellendi." : "İşlem başarıyla kaydedildi.");
+                } catch (err) {
+                    window.showToast("Hata: " + err.message);
+                } finally {
+                    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = originalBtnHtml; }
+                }
+            }
+        };
+
+        // --- Banka İşlemleri (CRUD) ---
+        window.updateEditingBankName = (val) => { editingBankName = val; };
+        
+        window.startEditBank = (id, currentName) => {
+            editingBankId = id;
+            editingBankName = currentName;
+            window.renderApp();
+        };
+
+        window.cancelEditBank = () => {
+            editingBankId = null;
+            editingBankName = '';
+            window.renderApp();
+        };
+
+        window.saveEditBank = async (id) => {
+            const newName = editingBankName.trim();
+            if (!newName) { window.showToast("Banka adı boş olamaz."); return; }
+
+            const oldBank = banks.find(b => b.id === id);
+            const changes = [{ type: 'UPDATE', collection: 'banks', id: id, oldData: {...oldBank}, newData: {name: newName} }];
+
+            if (isLocalMode) {
+                if (oldBank) oldBank.name = newName;
+                editingBankId = null;
+                window.pushAction(changes, "Banka güncellendi");
+                window.renderApp();
+                window.showToast("Banka güncellendi.");
+                return;
+            }
+
+            if (!currentUser) return;
+            try {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'banks', id), { name: newName });
+                editingBankId = null;
+                window.pushAction(changes, "Banka güncellendi");
+                window.renderApp();
+                window.showToast("Banka güncellendi.");
+            } catch (err) { window.showToast("Banka güncellenemedi."); }
+        };
+
+        window.handleAddBank = async (e) => {
+            e.preventDefault();
+            const nameInput = document.getElementById('newBankName');
+            const balanceInput = document.getElementById('newBankBalance');
+            if (!nameInput || !nameInput.value.trim() || !currentUser) return;
+
+            const newId = Date.now().toString();
+            const bankData = { name: nameInput.value.trim(), initialBalance: parseFloat(balanceInput.value) || 0 };
+            const changes = [{ type: 'ADD', collection: 'banks', id: newId, data: bankData }];
+
+            if (isLocalMode) {
+                banks.push({ id: newId, ...bankData });
+                nameInput.value = ''; 
+                if(balanceInput) balanceInput.value = '';
+                window.pushAction(changes, "Banka eklendi");
+                window.renderApp();
+                window.showToast("Banka başarıyla eklendi.");
+                return;
+            }
+
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'banks', newId), bankData);
+                nameInput.value = ''; 
+                if(balanceInput) balanceInput.value = '';
+                window.pushAction(changes, "Banka eklendi");
+                window.showToast("Banka başarıyla eklendi.");
+            } catch (err) { window.showToast("Banka eklenemedi."); }
+        };
+
+        window.handleDeleteBank = (id) => {
+            window.confirmAction('Bu bankayı silmek istediğinize emin misiniz? (İlişkili işlemler silinmez ancak banka bilgisi kaybolur)', async () => {
+                if(!currentUser) return;
+                const oldBank = banks.find(b => b.id === id);
+                if(!oldBank) return;
+                const changes = [{ type: 'DELETE', collection: 'banks', id: id, oldData: {...oldBank} }];
+
+                if (isLocalMode) { 
+                    banks = banks.filter(b => b.id !== id); 
+                    window.pushAction(changes, "Banka silindi");
+                    window.renderApp(); 
+                    return; 
+                }
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'banks', id));
+                    window.pushAction(changes, "Banka silindi");
+                    window.showToast("Banka silindi.");
+                } catch(e) {}
+            });
+        };
+
+        // --- Kategori İşlemleri (CRUD) ---
+        window.updateEditingCategoryName = (val) => { editingCategoryName = val; };
+
+        window.startEditCategory = (id, currentName) => {
+            editingCategoryId = id;
+            editingCategoryName = currentName;
+            window.renderApp();
+        };
+
+        window.cancelEditCategory = () => {
+            editingCategoryId = null;
+            editingCategoryName = '';
+            window.renderApp();
+        };
+
+        window.saveEditCategory = async (id) => {
+            const newName = editingCategoryName.trim();
+            if (!newName) { window.showToast("Kategori adı boş olamaz."); return; }
+
+            const oldCat = categories.find(c => c.id === id);
+            const changes = [{ type: 'UPDATE', collection: 'categories', id: id, oldData: {...oldCat}, newData: {name: newName} }];
+
+            if (isLocalMode) {
+                if (oldCat) oldCat.name = newName;
+                editingCategoryId = null;
+                window.pushAction(changes, "Kategori güncellendi");
+                window.renderApp();
+                window.showToast("Kategori güncellendi.");
+                return;
+            }
+
+            if (!currentUser) return;
+            try {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', id), { name: newName });
+                editingCategoryId = null;
+                window.pushAction(changes, "Kategori güncellendi");
+                window.renderApp();
+                window.showToast("Kategori güncellendi.");
+            } catch (err) { window.showToast("Kategori güncellenemedi."); }
+        };
+
+        window.handleAddCategory = async (e) => {
+            e.preventDefault();
+            const nameInput = document.getElementById('newCategoryName');
+            const domainInput = document.getElementById('newCategoryDomain');
+            if (!nameInput || !nameInput.value.trim() || !currentUser) return;
+            
+            const newId = Date.now().toString();
+            const domainVal = domainInput ? domainInput.value : 'general';
+            const catData = { name: nameInput.value.trim(), domain: domainVal };
+            const changes = [{ type: 'ADD', collection: 'categories', id: newId, data: catData }];
+
+            if (isLocalMode) {
+                categories.push({ id: newId, ...catData });
+                nameInput.value = ''; 
+                window.pushAction(changes, "Kategori eklendi");
+                window.renderApp(); 
+                window.showToast("Kategori başarıyla eklendi.");
+                return;
+            }
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', newId), catData);
+                nameInput.value = ''; 
+                window.pushAction(changes, "Kategori eklendi");
+                window.showToast("Kategori başarıyla eklendi.");
+            } catch (err) { window.showToast("Kategori eklenemedi."); }
+        };
+
+        window.handleDeleteCategory = (id) => {
+            window.confirmAction('Bu kategoriyi silmek istediğinize emin misiniz?', async () => {
+                if(!currentUser) return;
+                const oldCat = categories.find(c => c.id === id);
+                if(!oldCat) return;
+                const changes = [{ type: 'DELETE', collection: 'categories', id: id, oldData: {...oldCat} }];
+
+                if (isLocalMode) { 
+                    categories = categories.filter(c => c.id !== id); 
+                    window.pushAction(changes, "Kategori silindi");
+                    window.renderApp(); 
+                    return; 
+                }
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', id));
+                    window.pushAction(changes, "Kategori silindi");
+                    window.showToast("Kategori silindi.");
+                } catch(e){}
+            });
+        };
+
+        // --- Kurban İşlemleri (CRUD) ---
+        window.handleAddKurban = async (e) => {
+            e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalBtnHtml = submitBtn ? submitBtn.innerHTML : '';
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = 'Kaydediliyor...'; }
+
+            const now = Date.now();
+            const mainId = editingKurbanId || now.toString() + Math.random().toString(36).substr(2, 5);
+            
+            let kType = document.getElementById('kbType').value;
+            if (kType === 'Diğer') {
+                kType = document.getElementById('kbTypeOther').value.trim();
+            }
+
+            const countryNameEl = document.getElementById('kbCountryName');
+            const countryName = countryNameEl ? countryNameEl.value.trim() : '';
+
+            const kData = {
+                name: document.getElementById('kbName').value.trim(),
+                tc: document.getElementById('kbTC').value.trim(),
+                phone: document.getElementById('kbPhone').value.trim(),
+                ref: document.getElementById('kbRef').value.trim(),
+                receipt: document.getElementById('kbReceipt').value.trim(),
+                kType: kType,
+                status: document.getElementById('kbStatus').value,
+                description: document.getElementById('kbDescription').value.trim(),
+                date: document.getElementById('kbDate').value,
+                country: countryName,
+                deleted: false,
+                createdAt: editingKurbanId ? kurbans.find(k=>k.id===editingKurbanId).createdAt : now
+            };
+
+            let changes = [];
+            if (editingKurbanId) {
+                const oldKurban = kurbans.find(k => k.id === editingKurbanId);
+                changes.push({ type: 'UPDATE', collection: 'kurbans', id: mainId, oldData: {...oldKurban}, newData: kData });
+            } else {
+                changes.push({ type: 'ADD', collection: 'kurbans', id: mainId, data: kData });
+            }
+
+            if (isLocalMode) {
+                if (editingKurbanId) {
+                    const idx = kurbans.findIndex(k => k.id === mainId);
+                    if (idx > -1) Object.assign(kurbans[idx], kData);
+                } else {
+                    kurbans.unshift({ id: mainId, ...kData });
+                }
+                editingKurbanId = null;
+                window.pushAction(changes, editingKurbanId ? "Kurban Kaydı Güncellendi" : "Kurban Kaydı Eklendi");
+                window.renderApp();
+                window.showToast("Kurban başarıyla kaydedildi.");
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = originalBtnHtml; }
+                return;
+            }
+
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'kurbans', mainId);
+                if (editingKurbanId) await updateDoc(docRef, kData);
+                else await setDoc(docRef, kData);
+                
+                editingKurbanId = null;
+                window.pushAction(changes, editingKurbanId ? "Kurban Kaydı Güncellendi" : "Kurban Kaydı Eklendi");
+                window.showToast("Kurban başarıyla kaydedildi.");
+            } catch (err) {
+                window.showToast("Hata: Kayıt eklenemedi.");
+            } finally {
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = originalBtnHtml; }
+            }
+        };
+
+        window.startEditKurban = (id) => {
+            const k = kurbans.find(x => x.id === id);
+            if (!k) return;
+            editingKurbanId = id;
+            window.renderApp();
+            
+            setTimeout(() => {
+                document.getElementById('kbName').value = k.name || '';
+                document.getElementById('kbTC').value = k.tc || '';
+                document.getElementById('kbPhone').value = k.phone || '';
+                document.getElementById('kbRef').value = k.ref || '';
+                document.getElementById('kbReceipt').value = k.receipt || '';
+                document.getElementById('kbCountryName').value = k.country || '';
+                
+                const standardTypes = ["Adak", "Akika", "Nafile Kurban", "Vacip Kurban", "Şükür"];
+                if (standardTypes.includes(k.kType)) {
+                    document.getElementById('kbType').value = k.kType || '';
+                    window.handleKbTypeChange(k.kType);
+                } else {
+                    document.getElementById('kbType').value = 'Diğer';
+                    window.handleKbTypeChange('Diğer');
+                    document.getElementById('kbTypeOther').value = k.kType || '';
+                }
+
+                document.getElementById('kbStatus').value = k.status || 'Bekliyor';
+                document.getElementById('kbDescription').value = k.description || '';
+                document.getElementById('kbDate').value = k.date || new Date().toISOString().split('T')[0];
+                
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                window.showToast("Düzenleme modu aktif.");
+            }, 50);
+        };
+
+        window.cancelEditKurban = () => {
+            editingKurbanId = null;
+            window.renderApp();
+            window.showToast("Düzenleme iptal edildi.");
+        };
+
+        // --- Navigasyon ve Filtreleme Ayarları ---
+        window.setTransactionType = (type) => {
+            if (txType !== type) {
+                txType = type;
+                userEditedDeduction = false; 
+                if (editingTxId) {
+                    editingTxId = null;
+                    window.showToast("Düzenleme iptal edildi.");
+                }
+                window.renderApp();
+            }
+        };
+
+        window.switchTxView = (view) => {
+            currentTxView = view;
+            txType = 'income';
+            window.clearSelectionForContext('transactions_general');
+            window.clearSelectionForContext('transactions_dernek');
+            window.clearFilters();
+        };
+
+        window.switchCatView = (view) => {
+            currentCatView = view;
+            window.renderApp();
+        };
+
+        window.switchTab = (tab) => {
+            window.clearSelectionForContext('transactions_general');
+            window.clearSelectionForContext('transactions_dernek');
+            window.clearSelectionForContext('kurban');
+            activeTab = tab;
+            const mobileSelect = document.getElementById('mobile-nav-select');
+            if (mobileSelect) mobileSelect.value = tab;
+            txType = 'income';
+            editingTxId = null; 
+            editingKurbanId = null;
+            currentCatView = 'general';
+            window.clearFilters();
+            window.clearKbFilters();
+            window.renderApp();
+        };
+
+        window.handleFilterChange = (field, value) => {
+            if (field === 'type') filterType = value;
+            if (field === 'bank') filterBank = value;
+            if (field === 'category') filterCategory = value;
+            if (field === 'country') filterCountry = value;
+            if (field === 'startDate') filterStartDate = value;
+            if (field === 'endDate') filterEndDate = value;
+            if (field === 'search') filterSearch = value;
+            window.updateFilteredView();
+        };
+
+        window.clearFilters = () => {
+            filterType = '';
+            filterBank = '';
+            filterCategory = '';
+            filterCountry = '';
+            filterStartDate = '';
+            filterEndDate = '';
+            filterSearch = '';
+            sortColumn = 'date';
+            sortOrder = 'desc';
+            window.renderApp();
+        };
+
+        window.sortBy = (column) => {
+            if (sortColumn === column) {
+                sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortOrder = (column === 'date' || column === 'amount' || column === 'entry') ? 'desc' : 'asc';
+            }
+            window.renderApp();
+        };
+
+        window.renderSortIcon = (column) => {
+            if (sortColumn !== column) return `<i data-lucide="chevrons-up-down" class="w-4 h-4 text-gray-400 opacity-50 group-hover:opacity-100 transition-opacity"></i>`;
+            return sortOrder === 'asc' 
+                ? `<i data-lucide="chevron-up" class="w-4 h-4 text-blue-600"></i>` 
+                : `<i data-lucide="chevron-down" class="w-4 h-4 text-blue-600"></i>`;
+        };
+
+        window.handleKbFilterChange = (field, value) => {
+            if (field === 'search') filterKbSearch = value;
+            if (field === 'type') filterKbType = value;
+            if (field === 'status') filterKbStatus = value;
+            if (field === 'country') filterKbCountry = value;
+            if (field === 'startDate') filterKbStartDate = value;
+            if (field === 'endDate') filterKbEndDate = value;
+            window.updateKbFilteredView();
+        };
+
+        window.clearKbFilters = () => {
+            filterKbSearch = '';
+            filterKbType = '';
+            filterKbStatus = '';
+            filterKbCountry = '';
+            filterKbStartDate = '';
+            filterKbEndDate = '';
+            sortKbColumn = 'date';
+            sortKbOrder = 'desc';
+            window.renderApp();
+        };
+
+        window.sortKbBy = (column) => {
+            if (sortKbColumn === column) {
+                sortKbOrder = sortKbOrder === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortKbColumn = column;
+                sortKbOrder = column === 'date' ? 'desc' : 'asc';
+            }
+            window.renderApp();
+        };
+
+        window.renderKbSortIcon = (column) => {
+            if (sortKbColumn !== column) return `<i data-lucide="chevrons-up-down" class="w-4 h-4 text-gray-400 opacity-50 group-hover:opacity-100 transition-opacity"></i>`;
+            return sortKbOrder === 'asc' 
+                ? `<i data-lucide="chevron-up" class="w-4 h-4 text-blue-600"></i>` 
+                : `<i data-lucide="chevron-down" class="w-4 h-4 text-blue-600"></i>`;
+        };
+
+        window.handleKbTypeChange = (val) => {
+            const selectEl = document.getElementById('kbType');
+            const otherEl = document.getElementById('kbTypeOther');
+            if (!selectEl || !otherEl) return;
+            if (val === 'Diğer') {
+                selectEl.classList.remove('w-full');
+                selectEl.classList.add('w-1/2');
+                otherEl.classList.remove('hidden', 'w-0');
+                otherEl.classList.add('w-1/2', 'ml-2', 'block');
+                otherEl.required = true;
+            } else {
+                selectEl.classList.add('w-full');
+                selectEl.classList.remove('w-1/2');
+                otherEl.classList.add('hidden', 'w-0');
+                otherEl.classList.remove('w-1/2', 'ml-2', 'block');
+                otherEl.required = false;
+                otherEl.value = '';
+            }
+        };
+
+        // --- Excel Export & Import ---
+        window.exportToExcel = () => {
+            if (activeTab === 'kurban') {
+                const data = window.getFilteredKurbans().map(k => {
+                    return {
+                        "Tarih": window.formatDateTR(k.date),
+                        "Adı Soyadı": k.name || '-',
+                        "TC Numarası": k.tc || '-',
+                        "Telefon": k.phone || '-',
+                        "Ülke": k.country || '-',
+                        "Cinsi": k.kType || '-',
+                        "Durum": k.status || '-',
+                        "Referans": k.ref || '-',
+                        "Makbuz No": k.receipt || '-',
+                        "Açıklama": k.description || '-'
+                    };
+                });
+
+                if(data.length === 0) { window.showToast("Dışa aktarılacak veri bulunamadı."); return; }
+                const worksheet = XLSX.utils.json_to_sheet(data);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Kurbanlar");
+                XLSX.writeFile(workbook, `Nigde_IHH_Kurban_Kayitlari.xlsx`);
+                return;
+            }
+
+            const viewDomain = currentTxView;
+            const data = window.getFilteredTransactions(viewDomain).map(tx => {
+                const bank = banks.find(b => b.id === tx.bankId);
+                const category = categories.find(c => c.id === tx.categoryId);
+                const country = categories.find(c => c.id === tx.countryId);
+                
+                const rowData = {
+                    "Tarih": window.formatDateTR(tx.date),
+                    "Tip": tx.type === 'income' ? 'Girdi' : 'Çıktı',
+                    "Banka Adı": bank ? bank.name : 'Silinmiş Banka',
+                    "Kategori": category ? category.name : '-',
+                    "Ülke": country ? country.name : '-',
+                    "Açıklama": tx.description || '-',
+                    "Miktar": parseFloat(tx.amount)
+                };
+
+                return rowData;
+            });
+
+            if(data.length === 0) {
+                window.showToast("Dışa aktarılacak veri bulunamadı.");
+                return;
+            }
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "İşlemler");
+            XLSX.writeFile(workbook, `Nigde_IHH_${viewDomain === 'dernek' ? 'Dernek' : 'Bagis'}_Islemler.xlsx`);
+        };
+
+        window.triggerImport = () => {
+            document.getElementById('importExcelInput').click();
+        };
+
+        window.renderImportPreview = () => {
+            const modal = document.getElementById('import-preview-modal');
+            const tbody = document.getElementById('import-preview-tbody');
+            const summary = document.getElementById('import-preview-summary');
+            const fileEl = document.getElementById('import-preview-file');
+            const rateEl = document.getElementById('import-preview-rate');
+            const countEl = document.getElementById('import-preview-footer-count');
+            const deductionEl = document.getElementById('import-preview-footer-deduction');
+            const warningEl = document.getElementById('import-preview-warning');
+
+            if (!modal || !tbody) return;
+
+            const editableDeduction = importPreviewViewDomain === 'general';
+            const totalDeduction = importPreviewRows.reduce((sum, row) => sum + (parseFloat(row.deduction) || 0), 0);
+
+            summary.textContent = `${importPreviewRows.length} satır yüklendi. Aşağıdaki verileri kontrol ederek içe aktarabilirsiniz.`;
+            fileEl.textContent = importPreviewFileName || 'Dosya seçilmedi';
+            rateEl.textContent = `%${expenseRate}`;
+            countEl.textContent = `${importPreviewRows.length} satır`;
+            deductionEl.textContent = `Toplam kesinti: ${window.formatMoney(totalDeduction)}`;
+
+            if (editableDeduction) {
+                warningEl.classList.remove('hidden');
+                warningEl.textContent = 'Bağış işlemlerinde "çıktı" olan satırlar için dernek kesintisi otomatik hesaplandı. Gerekirse aşağıdan her satırın kesintisini manuel olarak değiştirebilirsiniz.';
+            } else {
+                warningEl.classList.add('hidden');
+                warningEl.textContent = '';
+            }
+
+            if (importPreviewRows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" class="p-8 text-center text-gray-500">Önizlenecek veri bulunamadı.</td></tr>';
+            } else {
+                tbody.innerHTML = importPreviewRows.map((row, index) => {
+                    const typeBadge = row.type === 'expense'
+                        ? '<span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-red-100 text-red-800 border border-red-200">Çıktı</span>'
+                        : '<span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800 border border-green-200">Girdi</span>';
+
+                    const isDeductionEditable = editableDeduction && row.type === 'expense';
+                    const remaining = (parseFloat(row.amount) || 0) - (parseFloat(row.deduction) || 0);
+
+                    return `
+                        <tr class="border-b border-gray-100 hover:bg-gray-50">
+                            <td class="p-3 text-gray-500">${index + 1}</td>
+                            <td class="p-3 whitespace-nowrap text-gray-700">${window.formatDateTR(row.date)}</td>
+                            <td class="p-3">${typeBadge}</td>
+                            <td class="p-3 text-gray-700">${row.bankName || '-'}</td>
+                            <td class="p-3 text-gray-700">${row.categoryName || '-'}</td>
+                            <td class="p-3 text-gray-700">${row.countryName || '-'}</td>
+                            <td class="p-3 text-gray-600 max-w-[260px]">${row.description || '-'}</td>
+                            <td class="p-3 text-right font-semibold text-gray-800 whitespace-nowrap">${window.formatMoney(row.amount)}</td>
+                            <td class="p-3 text-right whitespace-nowrap">
+                                ${isDeductionEditable ? `
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value="${Number(row.deduction || 0).toFixed(2)}"
+                                        oninput="window.updatePreviewDeduction(${index}, this.value)"
+                                        class="w-28 text-right border border-gray-300 rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                ` : `
+                                    <span class="text-gray-400">${row.type === 'expense' ? window.formatMoney(row.deduction || 0) : '-'}</span>
+                                `}
+                            </td>
+                            <td class="p-3 text-right font-medium whitespace-nowrap ${remaining < 0 ? 'text-red-600' : 'text-blue-700'}">
+                                ${window.formatMoney(remaining)}
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            modal.classList.remove('hidden');
+            lucide.createIcons();
+        };
+
+        window.closeImportPreview = () => {
+            importPreviewRows = [];
+            importPreviewFileName = '';
+            importPreviewViewDomain = 'general';
+            importPreviewBusy = false;
+            const modal = document.getElementById('import-preview-modal');
+            if (modal) modal.classList.add('hidden');
+            const input = document.getElementById('importExcelInput');
+            if (input) input.value = '';
+        };
+
+        window.updatePreviewDeduction = (index, value) => {
+            const row = importPreviewRows[index];
+            if (!row) return;
+
+            let deduction = parseFloat(value);
+            if (isNaN(deduction) || deduction < 0) deduction = 0;
+
+            const amount = parseFloat(row.amount) || 0;
+            if (deduction > amount) deduction = amount;
+
+            row.deduction = parseFloat(deduction.toFixed(2));
+            window.renderImportPreview();
+        };
+
+        window.prepareImportPreviewRows = (json, viewDomain) => {
+            const rows = [];
+
+            for (const row of json) {
+                const rawTarih = row["Tarih"] || row["tarih"];
+                const tarih = window.parseImportDate(rawTarih);
+                const tipRaw = (row["Tip"] || row["tip"] || "").toString().toLowerCase();
+                const tip = tipRaw.includes("çıktı") || tipRaw.includes("gider") ? "expense" : "income";
+
+                const bankaAdi = (row["Banka Adı"] || row["Banka"] || row["banka"] || "Bilinmeyen Banka").toString().trim();
+                const kategoriAdi = (row["Kategori"] || row["kategori"] || "").toString().trim();
+                const aciklama = (row["Açıklama"] || row["açıklama"] || row["Aciklama"] || "").toString().trim();
+                const miktar = parseFloat(row["Miktar"] || row["miktar"] || 0);
+
+                const rawUlke = row["Ülke"] || row["ülke"] || row["Ulke"] || row["ulke"];
+                const ulkeAdi = rawUlke ? rawUlke.toString().trim() : '';
+
+                if (isNaN(miktar) || miktar <= 0) continue;
+
+                let deduction = 0;
+                if (viewDomain === 'general' && tip === 'expense') {
+                    deduction = parseFloat((miktar * (expenseRate / 100)).toFixed(2));
+                }
+
+                rows.push({
+                    date: tarih,
+                    type: tip,
+                    bankName: bankaAdi,
+                    categoryName: kategoriAdi,
+                    countryName: ulkeAdi,
+                    description: aciklama,
+                    amount: parseFloat(miktar),
+                    deduction: deduction
+                });
+            }
+
+            return rows;
+        };
+
+        window.ensureImportBank = async (bankName, promises, actionChanges) => {
+            const normalized = (bankName || 'Bilinmeyen Banka').trim() || 'Bilinmeyen Banka';
+            let bank = banks.find(b => b.name?.toLowerCase() === normalized.toLowerCase());
+            if (bank) return bank;
+
+            const newBankId = 'b_' + Date.now() + Math.random().toString(36).substr(2, 9);
+            bank = { id: newBankId, name: normalized, initialBalance: 0 };
+            banks.push(bank);
+            actionChanges.push({ type: 'ADD', collection: 'banks', id: newBankId, data: { name: bank.name, initialBalance: bank.initialBalance } });
+
+            if (!isLocalMode) {
+                promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'banks', newBankId), {
+                    name: bank.name,
+                    initialBalance: bank.initialBalance
+                }));
+            }
+
+            return bank;
+        };
+
+        window.ensureImportCategory = async (categoryName, domain, promises, actionChanges) => {
+            if (!categoryName || categoryName === '-') return null;
+
+            let category = categories.find(c => c.name?.toLowerCase() === categoryName.toLowerCase() && (c.domain || 'general') === domain);
+            if (category) return category;
+
+            const newCatId = 'c_' + Date.now() + Math.random().toString(36).substr(2, 9);
+            category = { id: newCatId, name: categoryName, domain: domain };
+            categories.push(category);
+            actionChanges.push({ type: 'ADD', collection: 'categories', id: newCatId, data: { name: category.name, domain: category.domain } });
+
+            if (!isLocalMode) {
+                promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', newCatId), {
+                    name: category.name,
+                    domain: category.domain
+                }));
+            }
+
+            return category;
+        };
+
+        window.ensureImportCountry = async (countryName, promises, actionChanges) => {
+            if (!countryName || countryName === '-') return null;
+
+            let country = categories.find(c => c.name?.toLowerCase() === countryName.toLowerCase() && c.domain === 'country');
+            if (country) return country;
+
+            const newCatId = 'c_' + Date.now() + Math.random().toString(36).substr(2, 9) + 'ctry';
+            country = { id: newCatId, name: countryName, domain: 'country' };
+            categories.push(country);
+            actionChanges.push({ type: 'ADD', collection: 'categories', id: newCatId, data: { name: country.name, domain: country.domain } });
+
+            if (!isLocalMode) {
+                promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', newCatId), {
+                    name: country.name,
+                    domain: country.domain
+                }));
+            }
+
+            return country;
+        };
+
+        window.confirmImportPreview = async () => {
+            if (importPreviewBusy) return;
+            if (importPreviewRows.length === 0) {
+                window.showToast("Aktarılacak geçerli veri bulunamadı.");
+                return;
+            }
+            if (!currentUser && !isLocalMode) return;
+
+            const invalidRow = importPreviewRows.find(row => row.type === 'expense' && importPreviewViewDomain === 'general' && (parseFloat(row.deduction) || 0) > (parseFloat(row.amount) || 0));
+            if (invalidRow) {
+                window.showToast("Kesinti tutarı işlem tutarından büyük olamaz.");
+                return;
+            }
+
+            importPreviewBusy = true;
+
+            try {
+                const promises = [];
+                const actionChanges = [];
+                let importedCount = 0;
+                const now = Date.now();
+
+                for (const row of importPreviewRows) {
+                    const bank = await window.ensureImportBank(row.bankName, promises, actionChanges);
+
+                    let targetDomain = importPreviewViewDomain;
+                    if (importPreviewViewDomain === 'dernek') {
+                        targetDomain = row.type === 'income' ? 'dernek_gelir' : 'dernek_gider';
+                    }
+
+                    const category = await window.ensureImportCategory(row.categoryName, targetDomain, promises, actionChanges);
+                    const country = await window.ensureImportCountry(row.countryName, promises, actionChanges);
+
+                    const txId = 't_' + (now + importedCount) + Math.random().toString(36).substr(2, 7);
+                    const newTx = {
+                        type: row.type,
+                        bankId: bank.id,
+                        categoryId: category ? category.id : null,
+                        countryId: country ? country.id : null,
+                        amount: parseFloat(row.amount),
+                        description: row.description || '',
+                        date: row.date,
+                        domain: importPreviewViewDomain,
+                        createdAt: now + importedCount,
+                        deleted: false
+                    };
+
+                    actionChanges.push({ type: 'ADD', collection: 'transactions', id: txId, data: newTx });
+
+                    if (isLocalMode) {
+                        transactions.unshift({ id: txId, ...newTx });
+                    } else {
+                        promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', txId), newTx));
+                    }
+
+                    if (importPreviewViewDomain === 'general' && row.type === 'expense') {
+                        let deduction = parseFloat(row.deduction) || 0;
+                        if (deduction < 0) deduction = 0;
+                        if (deduction > row.amount) deduction = row.amount;
+                        deduction = parseFloat(deduction.toFixed(2));
+
+                        if (deduction > 0) {
+                            const sourceCategoryName = row.categoryName || 'Bağış';
+                            const deductionCategoryName = `${sourceCategoryName} Kesintisi`;
+                            const deductionCategory = await window.ensureImportCategory(deductionCategoryName, 'dernek_gelir', promises, actionChanges);
+
+                            const deductionTx = {
+                                type: 'income',
+                                bankId: bank.id,
+                                categoryId: deductionCategory ? deductionCategory.id : null,
+                                countryId: country ? country.id : null,
+                                amount: deduction,
+                                description: 'Dernek Kesintisi',
+                                date: row.date,
+                                domain: 'dernek',
+                                createdAt: now + importedCount + 0.1,
+                                deleted: false
+                            };
+
+                            const deductionTxId = 'inc_' + txId;
+                            actionChanges.push({ type: 'ADD', collection: 'transactions', id: deductionTxId, data: deductionTx });
+
+                            if (isLocalMode) {
+                                transactions.unshift({ id: deductionTxId, ...deductionTx });
+                            } else {
+                                promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'transactions', deductionTxId), deductionTx));
+                            }
+                        }
+                    }
+
+                    importedCount++;
+                }
+
+                if (!isLocalMode) {
+                    await Promise.all(promises);
+                }
+
+                window.pushAction(actionChanges, `${importedCount} işlem içe aktarıldı`);
+                window.renderApp();
+                window.closeImportPreview();
+                window.showToast(`${importedCount} işlem başarıyla eklendi.`);
+            } catch (error) {
+                console.error(error);
+                window.showToast("İçe aktarma sırasında bir hata oluştu.");
+            } finally {
+                importPreviewBusy = false;
+            }
+        };
+
+        window.importFromExcel = async (event) => {
+            const file = event.target.files[0];
+            if (!file || (!currentUser && !isLocalMode)) return;
+
+            const viewDomain = currentTxView;
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet);
+
+                    importPreviewRows = window.prepareImportPreviewRows(json, viewDomain);
+                    importPreviewFileName = file.name || '';
+                    importPreviewViewDomain = viewDomain;
+
+                    if (importPreviewRows.length === 0) {
+                        window.showToast("Aktarılacak geçerli satır bulunamadı.");
+                        const input = document.getElementById('importExcelInput');
+                        if (input) input.value = '';
+                        return;
+                    }
+
+                    window.renderImportPreview();
+                } catch (error) {
+                    console.error(error);
+                    window.showToast("Dosya okunurken bir hata oluştu.");
+                    const input = document.getElementById('importExcelInput');
+                    if (input) input.value = '';
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
+        };
+
+        window.triggerKurbanImport = () => {
+            document.getElementById('importKurbanExcelInput').click();
+        };
+
+        window.importKurbanFromExcel = async (event) => {
+            const file = event.target.files[0];
+            if (!file || (!currentUser && !isLocalMode)) return;
+
+            window.showToast("Kurban verileri yükleniyor...");
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(worksheet);
+
+                    let importedCount = 0;
+                    const promises = [];
+                    const now = Date.now();
+                    const changes = [];
+
+                    for (const row of json) {
+                        const rawName = row["Adı Soyadı"] || row["Ad"] || row["İsim"] || "";
+                        if (!rawName) continue;
+
+                        const rawTarih = row["Tarih"] || row["tarih"];
+                        const tarih = window.parseImportDate(rawTarih);
+                        const tc = (row["TC Numarası"] || row["TC"] || row["tc"] || "").toString().trim();
+                        const phone = (row["Telefon"] || row["telefon"] || row["Tel"] || "").toString().trim();
+                        const kType = (row["Cinsi"] || row["Kurbanın Cinsi"] || row["cinsi"] || "Diğer").toString().trim();
+                        const rawStatus = (row["Durum"] || row["durum"] || "Bekliyor").toString().trim();
+                        
+                        let status = "Bekliyor";
+                        if(rawStatus.toLowerCase().includes("kesil")) status = "Kesildi";
+                        if(rawStatus.toLowerCase().includes("teslim")) status = "Teslim Edildi";
+
+                        const ref = (row["Referans"] || row["referans"] || "").toString().trim();
+                        const receipt = (row["Makbuz No"] || row["Makbuz"] || "").toString().trim();
+                        const desc = (row["Açıklama"] || row["Not"] || "").toString().trim();
+
+                        const rawUlke = row["Ülke"] || row["ülke"] || row["Ulke"] || row["ulke"];
+                        const ulkeAdi = rawUlke ? rawUlke.toString().trim() : '';
+
+                        const kbId = 'k_' + now + Math.random().toString(36).substr(2, 9);
+                        const newKb = {
+                            name: String(rawName).trim(),
+                            tc: tc,
+                            phone: phone,
+                            kType: kType,
+                            status: status,
+                            ref: ref,
+                            receipt: receipt,
+                            description: desc,
+                            date: tarih,
+                            country: ulkeAdi,
+                            deleted: false,
+                            createdAt: now + importedCount
+                        };
+
+                        changes.push({ type: 'ADD', collection: 'kurbans', id: kbId, data: newKb });
+
+                        if (isLocalMode) {
+                            kurbans.unshift({ id: kbId, ...newKb });
+                        } else {
+                            promises.push(setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'kurbans', kbId), newKb));
+                        }
+                        importedCount++;
+                    }
+
+                    if (!isLocalMode) {
+                        await Promise.all(promises);
+                    }
+                    
+                    window.pushAction(changes, `${importedCount} Kurban Kaydı İçe Aktarıldı`);
+                    window.renderApp();
+                    window.showToast(`${importedCount} kurban kaydı başarıyla eklendi.`);
+                    document.getElementById('importKurbanExcelInput').value = ''; 
+                } catch (error) {
+                    console.error(error);
+                    window.showToast("Dosya okunurken bir hata oluştu.");
+                }
+            };
+            reader.readAsArrayBuffer(file);
         };
 
         // --- Görüntü Çizim (Rendering) Fonksiyonları ---
@@ -2316,32 +3059,6 @@
                 </div>
             ` : '';
 
-            const checkboxTh = isTxSelectionMode ? `
-                <th class="p-4 w-12 text-center" onclick="window.selectAllTxs()">
-                    <input type="checkbox" class="pointer-events-none w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" ${selectedTxs.length > 0 && selectedTxs.length === window.getFilteredTransactions(viewDomain).length ? 'checked' : ''}>
-                </th>
-            ` : '';
-
-            const actionButtonsHtml = isTxSelectionMode ? `
-                <button type="button" onclick="window.deleteSelectedTxs()" class="text-sm bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700 flex items-center gap-2 transition-colors shadow-sm">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i> Seçilenleri Sil (${selectedTxs.length})
-                </button>
-                <button type="button" onclick="window.toggleTxSelectionMode()" class="text-sm bg-gray-500 text-white px-3 py-1.5 rounded-md hover:bg-gray-600 flex items-center gap-2 transition-colors shadow-sm">
-                    İptal
-                </button>
-            ` : `
-                <button type="button" onclick="window.toggleTxSelectionMode()" class="text-sm bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-md hover:bg-blue-200 flex items-center gap-2 transition-colors shadow-sm">
-                    <i data-lucide="check-square" class="w-4 h-4"></i> Seç
-                </button>
-                <input type="file" id="importExcelInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="window.importFromExcel(event)" />
-                <button type="button" onclick="window.triggerImport()" class="text-sm bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 flex items-center gap-2 transition-colors">
-                    <i data-lucide="upload" class="w-4 h-4"></i> İçe Aktar
-                </button>
-                <button type="button" onclick="window.exportToExcel()" class="text-sm bg-green-600 text-white px-3 py-1.5 rounded-md hover:bg-green-700 flex items-center gap-2 transition-colors shadow-sm" title="Ekranda filtrelenmiş olan kayıtları Excel'e aktarır">
-                    <i data-lucide="download" class="w-4 h-4"></i> Excel'e Aktar
-                </button>
-            `;
-
             return `
                 <div class="space-y-6">
                     <div class="${theme.primaryBg} rounded-xl shadow-sm border ${theme.borderColor} p-6">
@@ -2462,14 +3179,30 @@
                                 <span id="filter-count-span" class="text-sm ${theme.iconColor}">Hesaplanıyor...</span>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
-                                ${actionButtonsHtml}
+                                <button type="button" onclick="window.toggleSelectionMode()" class="text-sm bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 flex items-center gap-2 transition-colors">
+                                    <i data-lucide="check-square" class="w-4 h-4"></i> ${window.isSelectionModeActive() ? 'Seçimi Kapat' : 'Seç'}
+                                </button>
+                                ${window.isSelectionModeActive() ? `
+                                <button type="button" onclick="window.selectAllVisibleItems()" class="text-sm bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-100 flex items-center gap-2 transition-colors">
+                                    <i data-lucide="list-checks" class="w-4 h-4"></i> Tümünü Seç
+                                </button>
+                                <button type="button" onclick="window.bulkSoftDeleteSelected()" class="text-sm bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-md hover:bg-red-100 flex items-center gap-2 transition-colors">
+                                    <i data-lucide="trash" class="w-4 h-4"></i> Seçilenleri Sil
+                                </button>` : ''}
+                                <input type="file" id="importExcelInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="window.importFromExcel(event)" />
+                                <button type="button" onclick="window.triggerImport()" class="text-sm bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 flex items-center gap-2 transition-colors">
+                                    <i data-lucide="upload" class="w-4 h-4"></i> İçe Aktar
+                                </button>
+                                <button type="button" onclick="window.exportToExcel()" class="text-sm bg-green-600 text-white px-3 py-1.5 rounded-md hover:bg-green-700 flex items-center gap-2 transition-colors shadow-sm" title="Ekranda filtrelenmiş olan kayıtları Excel'e aktarır">
+                                    <i data-lucide="download" class="w-4 h-4"></i> Excel'e Aktar
+                                </button>
                             </div>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left border-collapse">
                                 <thead>
                                     <tr class="${theme.tableHeadBg}">
-                                        ${checkboxTh}
+                                        ${window.isSelectionModeActive() ? `<th class="p-4 font-medium text-center w-12">Seç</th>` : ''}
                                         <th class="p-4 font-medium cursor-pointer hover:opacity-80 select-none group" onclick="window.sortBy('date')">
                                             <div class="flex items-center gap-1">Tarih ${window.renderSortIcon('date')}</div>
                                         </th>
@@ -2542,33 +3275,6 @@
                     }
                 }
             }
-
-            const checkboxTh = isKbSelectionMode ? `
-                <th class="p-4 w-12 text-center" onclick="window.selectAllKbs()">
-                    <input type="checkbox" class="pointer-events-none w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" ${selectedKbs.length > 0 && selectedKbs.length === kList.length ? 'checked' : ''}>
-                </th>
-            ` : '';
-
-            const actionButtonsHtml = isKbSelectionMode ? `
-                <button type="button" onclick="window.deleteSelectedKbs()" class="text-sm bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700 flex items-center gap-2 transition-colors shadow-sm">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i> Seçilenleri Sil (${selectedKbs.length})
-                </button>
-                <button type="button" onclick="window.toggleKbSelectionMode()" class="text-sm bg-gray-500 text-white px-3 py-1.5 rounded-md hover:bg-gray-600 flex items-center gap-2 transition-colors shadow-sm">
-                    İptal
-                </button>
-            ` : `
-                <button type="button" onclick="window.toggleKbSelectionMode()" class="text-sm bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-md hover:bg-blue-200 flex items-center gap-2 transition-colors shadow-sm">
-                    <i data-lucide="check-square" class="w-4 h-4"></i> Seç
-                </button>
-                <div class="w-px h-4 bg-gray-300 mx-1"></div>
-                <input type="file" id="importKurbanExcelInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="window.importKurbanFromExcel(event)" />
-                <button type="button" onclick="window.triggerKurbanImport()" class="text-sm bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 flex items-center gap-2 transition-colors">
-                    <i data-lucide="upload" class="w-4 h-4"></i> İçe Aktar
-                </button>
-                <button type="button" onclick="window.exportToExcel()" class="text-sm bg-green-600 text-white px-3 py-1.5 rounded-md hover:bg-green-700 flex items-center gap-2 transition-colors shadow-sm" title="Kayıtları Excel'e aktarır">
-                    <i data-lucide="download" class="w-4 h-4"></i> Excel'e Aktar
-                </button>
-            `;
 
             return `
                 <div class="space-y-6">
@@ -2708,16 +3414,33 @@
                     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                         <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
                             <h3 class="text-lg font-semibold text-gray-800">Kayıt Listesi</h3>
-                            <div class="flex items-center gap-2">
-                                <span id="kurban-count-span" class="text-sm text-gray-500 font-medium">${kList.length} kayıt</span>
-                                ${actionButtonsHtml}
+                            <div class="flex flex-wrap items-center gap-3">
+                                <span id="kurban-count-span" class="text-sm text-gray-500">${kList.length} kayıt</span>
+                                <div class="w-px h-4 bg-gray-300"></div>
+                                <button type="button" onclick="window.toggleSelectionMode()" class="text-sm bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 flex items-center gap-2 transition-colors">
+                                    <i data-lucide="check-square" class="w-4 h-4"></i> ${window.isSelectionModeActive() ? 'Seçimi Kapat' : 'Seç'}
+                                </button>
+                                ${window.isSelectionModeActive() ? `
+                                <button type="button" onclick="window.selectAllVisibleItems()" class="text-sm bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-md hover:bg-blue-100 flex items-center gap-2 transition-colors">
+                                    <i data-lucide="list-checks" class="w-4 h-4"></i> Tümünü Seç
+                                </button>
+                                <button type="button" onclick="window.bulkSoftDeleteSelected()" class="text-sm bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-md hover:bg-red-100 flex items-center gap-2 transition-colors">
+                                    <i data-lucide="trash" class="w-4 h-4"></i> Seçilenleri Sil
+                                </button>` : ''}
+                                <input type="file" id="importKurbanExcelInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="window.importKurbanFromExcel(event)" />
+                                <button type="button" onclick="window.triggerKurbanImport()" class="text-sm bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 flex items-center gap-2 transition-colors">
+                                    <i data-lucide="upload" class="w-4 h-4"></i> İçe Aktar
+                                </button>
+                                <button type="button" onclick="window.exportToExcel()" class="text-sm bg-green-600 text-white px-3 py-1.5 rounded-md hover:bg-green-700 flex items-center gap-2 transition-colors shadow-sm" title="Kayıtları Excel'e aktarır">
+                                    <i data-lucide="download" class="w-4 h-4"></i> Excel'e Aktar
+                                </button>
                             </div>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-left border-collapse">
                                 <thead>
                                     <tr class="bg-gray-50 border-b border-gray-100 text-sm text-gray-500">
-                                        ${checkboxTh}
+                                        ${window.isSelectionModeActive() ? `<th class="p-4 font-medium text-center w-12">Seç</th>` : ''}
                                         <th class="p-4 font-medium cursor-pointer hover:opacity-80 select-none group" onclick="window.sortKbBy('date')">
                                             <div class="flex items-center gap-1">Tarih ${window.renderKbSortIcon('date')}</div>
                                         </th>

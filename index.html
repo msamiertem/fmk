@@ -1126,28 +1126,62 @@
             return filtered;
         };
 
-        window.quickUpdateKurbanStatus = async (id, newStatus) => {
+        window.getKurbanStatusSelectClass = (status) => {
+            if (status === 'Bekliyor') return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+            if (status === 'Kesildi') return 'bg-blue-100 text-blue-800 border-blue-200';
+            return 'bg-green-100 text-green-800 border-green-200';
+        };
+
+        window.getKurbanProxySelectClass = (proxyStatus) => {
+            return proxyStatus === 'Alındı'
+                ? 'bg-green-100 text-green-800 border-green-200'
+                : 'bg-gray-100 text-gray-700 border-gray-200';
+        };
+
+        window.handleKbPaymentMethodChange = (val) => {
+            const receiptWrap = document.getElementById('kbReceiptWrap');
+            const receiptInput = document.getElementById('kbReceipt');
+            if (!receiptWrap || !receiptInput) return;
+            if (val === 'Nakit') {
+                receiptWrap.classList.remove('hidden');
+            } else {
+                receiptWrap.classList.add('hidden');
+                receiptInput.value = '';
+            }
+        };
+
+        window.quickUpdateKurbanField = async (id, field, value, successMessage = 'Kayıt güncellendi.') => {
             if (!currentUser && !isLocalMode) return;
             const oldKurban = kurbans.find(k => k.id === id);
-            if (!oldKurban || oldKurban.status === newStatus) return;
+            if (!oldKurban || oldKurban[field] === value) return;
 
-            const changes = [{ type: 'UPDATE', collection: 'kurbans', id: id, oldData: {...oldKurban}, newData: { status: newStatus } }];
+            const oldData = { ...oldKurban };
+            const newData = { [field]: value };
+            const changes = [{ type: 'UPDATE', collection: 'kurbans', id: id, oldData, newData }];
 
             if (isLocalMode) {
-                oldKurban.status = newStatus;
-                window.pushAction(changes, "Kurban durumu güncellendi");
+                oldKurban[field] = value;
+                window.pushAction(changes, successMessage);
                 window.updateKbFilteredView();
-                window.showToast("Durum güncellendi.");
+                window.showToast(successMessage);
                 return;
             }
 
             try {
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'kurbans', id), { status: newStatus });
-                window.pushAction(changes, "Kurban durumu güncellendi");
-                window.showToast("Durum güncellendi.");
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'kurbans', id), newData);
+                window.pushAction(changes, successMessage);
+                window.showToast(successMessage);
             } catch (e) {
-                window.showToast("Hata: Durum güncellenemedi.");
+                window.showToast('Hata: Kayıt güncellenemedi.');
             }
+        };
+
+        window.quickUpdateKurbanStatus = async (id, newStatus) => {
+            await window.quickUpdateKurbanField(id, 'status', newStatus, 'Durum güncellendi.');
+        };
+
+        window.quickUpdateKurbanProxy = async (id, newProxyStatus) => {
+            await window.quickUpdateKurbanField(id, 'proxyStatus', newProxyStatus, 'Vekalet durumu güncellendi.');
         };
 
         window.updateKbFilteredView = () => {
@@ -1162,7 +1196,7 @@
             if (countSpan) countSpan.textContent = `${filtered.length} kayıt`;
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="${selectionActive ? 9 : 8}" class="p-8 text-center text-gray-500">Kriterlere uygun kurban kaydı bulunamadı.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="${selectionActive ? 10 : 9}" class="p-8 text-center text-gray-500">Kriterlere uygun kurban kaydı bulunamadı.</td></tr>`;
                 window.refreshSelectionSummary();
                 return;
             }
@@ -1170,7 +1204,9 @@
             tbody.innerHTML = filtered.map(k => {
                 const countryStr = k.country || '-';
                 const checked = selectedSet.has(k.id);
-                
+                const paymentMethod = k.paymentMethod || 'Banka';
+                const proxyStatus = k.proxyStatus || 'Alınmadı';
+
                 return `
                     <tr class="hover:bg-gray-50 transition-colors">
                         ${selectionActive ? `
@@ -1186,7 +1222,7 @@
                             ${k.name}
                         </td>
                         <td class="p-4 text-sm text-gray-600">
-                            <div class="text-xs text-gray-500">${k.tc ? 'TC: '+k.tc : ''}</div>
+                            <div class="text-xs text-gray-500">${k.tc ? 'TC: ' + k.tc : ''}</div>
                             <div>${k.phone || '-'}</div>
                         </td>
                         <td class="p-4 text-sm text-gray-600">
@@ -1194,17 +1230,26 @@
                             <span class="text-xs text-gray-500">${countryStr}</span>
                         </td>
                         <td class="p-4 text-sm">
-                            <select onchange="window.quickUpdateKurbanStatus('${k.id}', this.value)" class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium outline-none cursor-pointer border ${k.status === 'Bekliyor' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : k.status === 'Kesildi' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-green-100 text-green-800 border-green-200'}">
+                            <select onchange="window.quickUpdateKurbanStatus('${k.id}', this.value)" class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium outline-none cursor-pointer border ${window.getKurbanStatusSelectClass(k.status)}">
                                 <option value="Bekliyor" ${k.status === 'Bekliyor' ? 'selected' : ''}>Bekliyor</option>
                                 <option value="Kesildi" ${k.status === 'Kesildi' ? 'selected' : ''}>Kesildi</option>
                                 <option value="Teslim Edildi" ${k.status === 'Teslim Edildi' ? 'selected' : ''}>Teslim Edildi</option>
                             </select>
                         </td>
+                        <td class="p-4 text-sm">
+                            <select onchange="window.quickUpdateKurbanProxy('${k.id}', this.value)" class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium outline-none cursor-pointer border ${window.getKurbanProxySelectClass(proxyStatus)}">
+                                <option value="Alınmadı" ${proxyStatus === 'Alınmadı' ? 'selected' : ''}>Alınmadı</option>
+                                <option value="Alındı" ${proxyStatus === 'Alındı' ? 'selected' : ''}>Alındı</option>
+                            </select>
+                        </td>
+                        <td class="p-4 text-sm text-gray-600">
+                            <div class="text-xs text-gray-500">Ödeme: ${paymentMethod}</div>
+                            <div>Makbuz: ${paymentMethod === 'Nakit' ? (k.receipt || '-') : '-'}</div>
+                        </td>
                         <td class="p-4 text-sm text-gray-600">
                             <div class="text-xs text-gray-500">Ref: ${k.ref || '-'}</div>
-                            <div>Makbuz: ${k.receipt || '-'}</div>
+                            <div>${k.description || '-'}</div>
                         </td>
-                        <td class="p-4 text-sm text-gray-600">${k.description || '-'}</td>
                         <td class="p-4 text-center space-x-2 whitespace-nowrap">
                             <button type="button" onclick="window.startEditKurban('${k.id}')" class="text-gray-400 hover:text-blue-500 transition-colors" title="Düzenle">
                                 <i data-lucide="edit-2" class="w-5 h-5"></i>
@@ -1866,12 +1911,16 @@
             const countryNameEl = document.getElementById('kbCountryName');
             const countryName = countryNameEl ? countryNameEl.value.trim() : '';
 
+            const paymentMethod = document.getElementById('kbPaymentMethod').value;
+            const receiptValue = paymentMethod === 'Nakit' ? document.getElementById('kbReceipt').value.trim() : '';
             const kData = {
                 name: document.getElementById('kbName').value.trim(),
                 tc: document.getElementById('kbTC').value.trim(),
                 phone: document.getElementById('kbPhone').value.trim(),
                 ref: document.getElementById('kbRef').value.trim(),
-                receipt: document.getElementById('kbReceipt').value.trim(),
+                paymentMethod: paymentMethod,
+                receipt: receiptValue,
+                proxyStatus: document.getElementById('kbProxyStatus').value,
                 kType: kType,
                 status: document.getElementById('kbStatus').value,
                 description: document.getElementById('kbDescription').value.trim(),
@@ -1930,7 +1979,10 @@
                 document.getElementById('kbTC').value = k.tc || '';
                 document.getElementById('kbPhone').value = k.phone || '';
                 document.getElementById('kbRef').value = k.ref || '';
+                document.getElementById('kbPaymentMethod').value = k.paymentMethod || 'Banka';
                 document.getElementById('kbReceipt').value = k.receipt || '';
+                window.handleKbPaymentMethodChange(k.paymentMethod || 'Banka');
+                document.getElementById('kbProxyStatus').value = k.proxyStatus || 'Alınmadı';
                 document.getElementById('kbCountryName').value = k.country || '';
                 
                 const standardTypes = ["Adak", "Akika", "Nafile Kurban", "Vacip Kurban", "Şükür"];
@@ -2112,6 +2164,8 @@
                         "Ülke": k.country || '-',
                         "Cinsi": k.kType || '-',
                         "Durum": k.status || '-',
+                        "Vekalet": k.proxyStatus || 'Alınmadı',
+                        "Ödeme Şekli": k.paymentMethod || 'Banka',
                         "Referans": k.ref || '-',
                         "Makbuz No": k.receipt || '-',
                         "Açıklama": k.description || '-'
@@ -2548,7 +2602,11 @@
                         if(rawStatus.toLowerCase().includes("teslim")) status = "Teslim Edildi";
 
                         const ref = (row["Referans"] || row["referans"] || "").toString().trim();
-                        const receipt = (row["Makbuz No"] || row["Makbuz"] || "").toString().trim();
+                        const paymentMethodRaw = (row["Ödeme Şekli"] || row["Odeme Sekli"] || row["ödeme şekli"] || row["odeme sekli"] || "Banka").toString().trim();
+                        const paymentMethod = paymentMethodRaw.toLowerCase().includes('nakit') ? 'Nakit' : 'Banka';
+                        const receipt = paymentMethod === 'Nakit' ? (row["Makbuz No"] || row["Makbuz"] || "").toString().trim() : "";
+                        const proxyRaw = (row["Vekalet"] || row["Vekâlet"] || row["vekalet"] || "Alınmadı").toString().trim();
+                        const proxyStatus = proxyRaw.toLowerCase().includes('alınd') ? 'Alındı' : 'Alınmadı';
                         const desc = (row["Açıklama"] || row["Not"] || "").toString().trim();
 
                         const rawUlke = row["Ülke"] || row["ülke"] || row["Ulke"] || row["ulke"];
@@ -2561,6 +2619,8 @@
                             phone: phone,
                             kType: kType,
                             status: status,
+                            paymentMethod: paymentMethod,
+                            proxyStatus: proxyStatus,
                             ref: ref,
                             receipt: receipt,
                             description: desc,
@@ -3417,8 +3477,24 @@
                                 <input type="text" id="kbRef" class="w-full p-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
                             </div>
                             <div class="space-y-1">
+                                <label class="text-sm font-medium text-gray-700">Ödeme Şekli *</label>
+                                <div class="flex">
+                                    <select id="kbPaymentMethod" onchange="window.handleKbPaymentMethodChange(this.value)" class="w-full p-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" required>
+                                        <option value="Banka">Banka</option>
+                                        <option value="Nakit">Nakit</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="kbReceiptWrap" class="space-y-1 hidden">
                                 <label class="text-sm font-medium text-gray-700">Makbuz Numarası</label>
                                 <input type="text" id="kbReceipt" class="w-full p-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div class="space-y-1">
+                                <label class="text-sm font-medium text-gray-700">Vekalet Durumu *</label>
+                                <select id="kbProxyStatus" class="w-full p-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" required>
+                                    <option value="Alınmadı">Alınmadı</option>
+                                    <option value="Alındı">Alındı</option>
+                                </select>
                             </div>
                             <div class="space-y-1 md:col-span-2 lg:col-span-3">
                                 <label class="text-sm font-medium text-gray-700">Açıklama / Not</label>
@@ -3525,8 +3601,9 @@
                                         <th class="p-4 font-medium cursor-pointer hover:opacity-80 select-none group" onclick="window.sortKbBy('status')">
                                             <div class="flex items-center gap-1">Durum ${window.renderKbSortIcon('status')}</div>
                                         </th>
-                                        <th class="p-4 font-medium">Ref / Makbuz</th>
-                                        <th class="p-4 font-medium">Açıklama</th>
+                                        <th class="p-4 font-medium">Vekalet</th>
+                                        <th class="p-4 font-medium">Ödeme / Makbuz</th>
+                                        <th class="p-4 font-medium">Ref / Açıklama</th>
                                         <th class="p-4 font-medium text-center">İşlem</th>
                                     </tr>
                                 </thead>
